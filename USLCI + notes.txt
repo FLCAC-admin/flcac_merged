@@ -1,0 +1,42 @@
+Changes to Repos for USLCI ++
+- Create new empty database
+- Download and import json
+- Remove library - keep all
+- Import forestry repo (FPL version)
+- Types of bridges -->
+
+1. Direct use of a flow that only has one provider
+	- No current use cases in USLCI until the forestry repo update is release.
+	- Common in other repos such as NIST and forestry. Connections to USLCI (e.g., natural gas; combusted in industrial boiler).
+	- The flow exists in the NAICS folder (not the bridges folder) and is tagged with the origin repo.
+	- These flows just need the default provider to be selected (not a huge deal if not since there is only one provider but best practice is to have it selected).
+		- SQL script that I have used before:
+			UPDATE tbl_exchanges e
+			SET F_Default_provider = (
+				SELECT p.ID
+				FROM tbl_processes p
+				JOIN tbl_exchanges q ON p.F_Quantitative_reference = q.ID
+				WHERE q.F_Flow = e.F_Flow
+				FETCH FIRST ROW ONLY
+			)
+			WHERE e.IS_INPUT = 1;
+
+2. Direct use of a flow that has multiple providers.
+	- Bridge process is used in most cases. Exception to this is the electricity baseline since it has already been integrated into USLCI.
+	- Bridges aren't needed here if the appropriate provider is selected in exchanges. The appropriate provider is noted in the general description of the bridge process.
+	- Example: "Electricity Bridge; CAISO - FERC; Forestry and Forest Products to US Electricity Baseline"
+	
+3. Indirect use of a flow that may or may not have multiple providers.
+	- Bridge process is required for this type of use case. Majority of USLCI bridges are this type.
+	- Used when conversions or proxies are needed.
+		- Example of a conversion: "Ink, at plant Bridge; USLCI to USEEIO"
+		- Example of a proxy: "Dry rough lumber Bridge; USLCI to USFS"
+		- Example of a proxy + conversion: "Aluminium sulphate; powder Bridge; USLCI to USEEIO"
+		
+Notes on implementation -
+- Primarily focus on setting appropriate providers in the bridge processes that can't be removed (indirect use of flow case). Provider is noted in the general description.
+- Also, remove bridges that directly use a flow that has multiple providers - just set the provider in the exchange. The only use case of this right now is in the Forestry and Forest Products to US Electricity Baseline folder.
+- In USLCI, there are no use cases of a direct use of a flow from another repo that only has one provider.
+
+	
+	
