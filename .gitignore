@@ -1,0 +1,5 @@
+*.zip
+
+# pixi environments
+.pixi/*
+!.pixi/config.toml
