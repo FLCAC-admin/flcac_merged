@@ -10,4 +10,10 @@ version = "0.1.0"
 [dependencies]
 python = ">=3.14.3,<3.15"
 requests = ">=2.32.5,<2.33"
-spyder = ">=6.1.2,<6.2"
+platformdirs = ">=4.9.6,<4.10"
+
+[feature.dev.dependencies]
+spyder = ">=6.1.4,<6.2"
+
+[environments]
+dev = ["dev"]
