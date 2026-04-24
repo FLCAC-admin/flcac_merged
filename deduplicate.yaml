@@ -1,0 +1,82 @@
+# list of objects duplicated across data packages (dpkg), indexed by their original/parent package
+# FEDEFL: de facto parent of all elem. flows on FLCAC dpkgs
+# USEEIO: de facto parent of all tech. flows within it
+
+US_electricity_baseline:
+  process:
+
+  flow:
+    - 3bca3bc6-2443-3184-8976-72dc98d258f6
+
+
+Woody_biomass:
+  process:
+
+  flow:
+    # Flow.name issues in USLCI:
+    - fb62f38b-09c1-42c0-aaa1-53a1c7b53200
+    # only CORRIM contains default providers; to-be-migrated to USFS:
+    - 7a157e7c-91ca-3d1e-b13c-df3bca99bd51
+    - 945a2b4b-8245-3347-ae34-cba43f0d4a28
+    - 99452873-5693-3ecf-a0a6-e8a8821728bb
+    # CORRIM & woody providers
+    - 3c670bdf-eb7b-3ad2-bd9b-badb089ba9df
+    - 456df825-bfb7-31be-a088-e89c0318c699
+    - 4c1828a4-14fa-34d6-aa01-81f86d817599
+    - 76dd64c9-130f-3803-bdf2-ae1445a7372d
+    - 8a761536-61b0-3f99-aca1-c8408fdc06e1
+    - b003f26f-e4d9-334a-8c25-e60d46315eb7
+    - f4e19741-e926-3559-bf34-d54bd937ab6a
+    # Multi-provider flows (ToDo: create & connect mixing processes)
+    - 3a0a003d-e41e-4332-be8a-cd93fbfc1974
+    - 550c195a-26b6-4b91-adf6-bb56608d9138
+    - a9354422-7e84-3f28-b64f-c038c3b0052b
+    - aee60ee9-18e5-4aa6-8368-c5d4da531b1a
+    - b1e0aa1e-6a7d-4ae5-a05a-ccfb8f2b417d
+    - f22f3515-1680-4679-8234-cc155fb827f0
+    # Single-provider flows (ToDo: compile programmatically):
+    - 52c67bbc-294d-401b-b305-7ec64067aca2
+
+
+USLCI_Database_Public:
+  process:
+    # USLCI to USEEIO bridges:
+    - 442ab5b5-32f4-4de0-9aa7-fa989b0579af
+    - 6af5ef7b-10c2-4e38-b956-05780573b9ce
+  flow:
+    # USEEIO bridge flows:
+    - a6bee800-f46c-4933-a6be-05305133d239
+    # woody biomass flows, but choose USLCI (updated names) for now:
+    - 31948a1f-886a-3020-b33b-d381a427dbc6
+    - dac6904f-42a7-3229-95d4-39c316fbd8e3
+    # waste CUTOFF flows, no provider
+    - 08f2b558-7aa9-4bfd-aa38-67f8b619095f
+    - 12f3be27-4d77-4668-a021-071096d78b3f  # provider in NIST/construction_materials
+    - 7224edad-d8e7-48db-9fa7-0e49bbca75b6
+    - 8191e38b-421f-4348-a2e0-29303147f2d1
+     # migrate to 'Single-provider flows' once FHWA issue is resolved:
+    - 628c07ec-0802-39c1-ab88-1c62848ef436
+    # Single-provider flows (ToDo: compile programmatically):
+    - 0def374e-dc34-4f2a-81d6-1a8f4eb7faa6
+    - 0e44e579-abb0-3c77-af64-c774d65be529
+    - 1e68baef-0ed7-37bb-9919-61963f9fbd08
+    - 1f8a25cb-2a84-45ca-b418-1b6ab9c38c2c
+    - 27eb16da-5cbe-393a-a616-1022c15a8d72
+    - 2afb4e2f-b224-3900-956f-03e3f27b276b
+    - 2bb0cd6b-941b-38da-856c-1b7bd0cc5f49
+    - 42385daf-e0a4-35de-9a68-931400275c60
+    - 43b6c51f-f1a9-4a6d-8070-fa84adf27d23
+    - 45f1fd00-2093-3e05-9b41-e942b9e8cec9
+    - 692bdff7-996c-43bd-8182-4528f0e69672
+    - a5c7d642-4e3a-40af-a919-a2f7601340b0
+    - ba4fbc4f-a9ab-387c-8bdd-9308dc19f404
+    - bc38e349-1ccf-3855-a615-a4f581ab875b
+    - c5f94bb1-b39e-39fa-b616-376a30531c2d
+    - d12c4a32-12a8-4673-9b14-5d227d2a128e
+    - d3904ae5-01cb-45d9-bff2-555f509e2677
+    - d815ff18-015c-3afb-be18-be03bdf325da
+    - ea8515c5-e3d4-4f42-a856-67a9b85b30a0
+    - f15f7a4a-994e-4547-b334-549fa863cd91
+    - f77da622-e84d-3639-8917-fcf792aaee13
+    - f7c00d19-9601-373a-ba23-593e251b4dee
+    - f806b9df-b77c-3369-a00f-feda82b0778c
