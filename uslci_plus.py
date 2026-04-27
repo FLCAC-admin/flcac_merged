@@ -1,60 +1,47 @@
 """
-Download FLCAC data packages (dpkg) via public API, deduplicate by UUID, 
+Download and cache FLCAC data packages via the public API, deduplicate by UUID, 
 then merge into a single .ZIP
-
-API docs: https://www.lcacommons.gov/lca-commons-api-guide
-
-- Uses the openLCA Collaboration Server API pattern:
-  1) prepare a JSON-LD package -> returns a token
-  2) download zip with that token
-
-- Rules for deduplicating same-UUID objects:
-    1. Import list of original parent:child_uuid pairs from deduplicate.yaml
-      then drop all non-parent instances of child_uuid
-      > Note: FEDEFL is parent for all elem. Flows; USEEIO for all tech. Flows it contains
-    2. Then, defer to order of entries in DATA_PACKAGES_BUILD
 
 # Glossary
 - build: the database (DB) being assembled from a manifest 
-    > now: USLCI+ via DATA_PACKAGES_BUILD; later: arbitrary DB 
+    > now: USLCI+ via DATA_PACKAGES_BUILD; later: arbitrary DB
+- data package (dpkg): a collection of olca-schema data objects stored in an FLCAC repo
 - dependency: a dpkg specified as a component of the build 
 - duplicate: the same object appears in >1 dependency, 
              as identified by UUID or other matching criteria
 - manifest: the structured list of dependency specifiers {alias, version, etc.}, 
             where each entry is used to uniquely identify and locate/fetch a dpkg
 
-# TODO
-- (later) avoid decompress/recompress during copy - https://github.com/python/cpython/pull/125718
-- (later) parallelize copying tasks via multiprocessing
+FLCAC API docs: https://www.lcacommons.gov/lca-commons-api-guide
+
+Rules for deduplicating same-UUID objects:
+    1. Import dict of {original/parent dpkg:uuid_child} pairs from deduplicate.yaml
+      then ignore all instances of uuid_child that appear in other dpkgs
+      > Note: FEDEFL is parent for all elem. Flows; USEEIO for all tech. Flows it contains
+    2. Then, defer to order of entries in DATA_PACKAGES_BUILD
 """
-import io
-import json
-import shutil
+
 import sys
 import zipfile as zf
+from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import Set, Tuple
 
 import requests
 import yaml
 from platformdirs import user_data_dir
 
+
 PATH_SCRIPT = Path(__file__).parent
-PATH_OUT = PATH_SCRIPT / 'output'
-PATH_OUT_ZIP = PATH_OUT / 'combined_jsonld.zip'
-PATH_CACHE = Path(user_data_dir(appauthor='FLCAC', appname='uslci+'))
+# PATH_OUT = PATH_SCRIPT / 'output'
+PATH_OUT_ZIP = PATH_SCRIPT / 'USLCI+.zip'
+PATH_CACHE = Path(user_data_dir(appauthor='FLCAC', appname='uslci+'))  # ~/FLCAC/uslci+
 PATH_CACHE.mkdir(parents=True, exist_ok=True)
 
 
 SESSION = requests.Session()
 
-DEVELOPER_MODE = True
-# BUG: using `True` causes unicode escape sequences for ASCII characters in the
-    # raw JSON-LD files to be lost across json.loads and json.dumps
-# TODO: screen for duplicates via in-memory json.loads dicts, then use file_path 
-    # pointers to write original bytes to final .ZIP
-
-# Base URL to download whole dpkgs via API
+# Base URL of FLCAC API endpoint to download whole dpkgs
 BASE_URL = 'https://www.lcacommons.gov/lca-collaboration/ws/public/download/json'
 
 
@@ -67,10 +54,10 @@ DATA_PACKAGES_CORE: Set[Tuple[str, str]] = {
 # Choose data packages to download: (group, dpkg), as specified in repo URL
 # TODO: updat FLCAC API to 
 DATA_PACKAGES_BUILD: Set[Tuple[str, str]] = {
+    ('US_Environmental_Protection_Agency', 'USEEIO_v2'),
     ('National_Renewable_Energy_Laboratory', 'USLCI_Database_Public'),
     ('Federal_LCA_Commons', 'US_electricity_baseline'),
     ('US_Forest_Service_Forest_Products_Lab', 'Woody_biomass'),
-    ('US_Environmental_Protection_Agency', 'USEEIO_v2'),
     # ('US_Environmental_Protection_Agency', 'Construction_and_demolition_2022_update_2'),
     # ('US_Environmental_Protection_Agency', 'Heavy_equipment_operation'),
     # ('National_Energy_Technology_Lab', 'Coal_extraction'),
@@ -81,7 +68,6 @@ DATA_PACKAGES_BUILD: Set[Tuple[str, str]] = {
     # # deprecated
     # ('CORRIM', 'Forestry_and_forest_products'),
 }
-
 
 
 # %%
@@ -123,256 +109,137 @@ def download_dpkg(group: str, dpkg: str) -> Path:
               path_zip.as_posix())
 
 
-# def iter_zip_jsons(path_zip: Path):
-#     """
-#     Stream dpkg zip contents
-#     """
-#     with zf.Path(path_zip) as z:
-        
-#     # with zf.ZipFile(path_zip, 'r') as z:
-#     #     for file_path in z.namelist():
-#     #         if (not file_path.endswith('.json')
-#     #             or file_path.startswith('bin/')
-#     #             or file_path in ['categories.json', 'openlca.json']):
-#     #             continue
-#     #         data = z.read(file_path)
-#     #         # try:
-#     #         #     obj = json.loads(data.decode('utf-8'))
-#     #         # except Exception:
-#     #         #     print(f'WARNING non-UTF-8 text in JSON: {file_path}')
-#     #         #     obj = json.loads(data.decode('latin-1'))
-#     #         yield file_path, data
-#             yield file_path
-
-
-
-# %%
-for group, dpkg in (DATA_PACKAGES_BUILD | DATA_PACKAGES_CORE):
-    path_zip = download_dpkg(group, dpkg)
-
-with (PATH_SCRIPT / "deduplicate.yaml").open() as f:
-    dedup = yaml.safe_load(f)
-
-# %%
-def iter_zip_jsons(path_zip: Path) -> zf.ZipInfo:
+def compile_deduplication_index() -> defaultdict:
     """
-    Iterate over items within .zip dpkg, ignoring non-JSON, binary, and 
-    root-level files
+    Import deduplicate.yaml and transform it from  
+    (1) a dict of {parent/original dpkg: UUIDs duplicated in other dpkgs}, to
+    (2) a dict of {dpkg: .zip-relative file paths of JSONs to ignore in dpkg}
     """
-    # with zf.Path(path_zip) as z:
-    #     for file_path in z.glob('**/*.json'):
-    #         yield file_path
-    with zf.ZipFile(path_zip, 'r') as z:
-        # for file_path in z.namelist():  
-        for item in z.infolist():
-            file_path = item.filename
-            if (not file_path.endswith('.json')
-                or file_path.startswith('bin/')
-                or file_path in ['categories.json', 'openlca.json']):
-                continue
-            yield item
-            # data = z.read(file_path)
-            # try:
-            #     obj = json.loads(data.decode('utf-8'))
-            # except Exception:
-            #     print(f'WARNING non-UTF-8 text in JSON: {file_path}')
-            #     obj = json.loads(data.decode('latin-1'))
-            # yield file_path, data
-            
-def clone_file_across_zips(path_zip_source, path_zip_target):
-    """
-    Copy a file from within a source .zip into a destination .zip, 
-    while preserving that file's original metadata
-    """
-    # TODO: integrate dict_skip, so as to minimize entering/exiting 'with' buffers
-    with zf.ZipFile(path_zip_target, 'a') as zip_target:
-        # for path_zip_source in iterable
-        with zf.ZipFile(path_zip_source, 'r') as zip_source:         
-            # Iterate through each file's metadata object (ZipInfo)
-            for info in zip_source.infolist():
-                # Read the file's raw content
-                with zip_source.open(info.filename) as file_data:
-                    # Write content into the new ZIP using the original ZipInfo
-                    zip_target.writestr(info, file_data.read())
-                    shutil.copyfileobj(1, 2) # faster but drops metadata
-
-
-
-
-# zip-to-zip copying
-with zf.ZipFile(PATH_OUT_ZIP, 'w') as zip_target:
-    files_written = set()
-    for group, dpkg in DATA_PACKAGES_BUILD:
-        path_zip = PATH_CACHE / f'{dpkg}.zip'
-        with zf.ZipFile(path_zip, 'r') as zip_source:
-            for item in zip_source.infolist():
-                zip_target.writestr(item, zip_source.read(item.filename))
-                # with zip_source.open(item) as file_source:
-                #     zip_target.writestr(item, file_source.read())
-            # # TODO: benchmark shutil.copyfileobj against zf.ZipFile.writestr
-            # with zip_source.open(item) as file_source:
-            #     with zip_target.open(item, 'w') as file_target:
-            #         shutil.copyfileobj(file_source, file_target)
-
-          
-with zf.ZipFile(PATH_OUT_ZIP, 'w', compression=zf.ZIP_DEFLATED) as zout:
-    files_written = set()
-    for group, dpkg, path_zip in dpkg_zips:
-        for file_path, data in iter_zip_jsons(path_zip):
-            if file_path in files_written:
-                print('WARNING duplicate not yet addressed by deduplicate.yaml:',
-                      f'\n{file_path}')
-            else:
-                zout.writestr(file_path, data)
-                files_written.add(file_path)
-
+    with (PATH_SCRIPT / "deduplicate.yaml").open() as f:
+        dedup_orig = yaml.safe_load(f)
     
-# TODO: expand dedup to include {elementary_flow_list: {flow: all}} and 
-    # {USEEIO_v2: {flow: all except FEDEFL_flows}}
-
-# TODO: by active-for-write dpkg, compile sets of UUIDs by @type to skip writing
-    # by dpkg (in DATA_PACKAGES_BUILD) and @type (zip subdir), 
-        # compile flow and process set(uuids in dedup[all - dpkg_current][@type])
-        # to skip writing to zout
-    # If duplicate arises not caught by dedup, flag it and skip write
-
-# ???: for dedup write logic, iterate over relative Paths (~ / <@type> / *.json), 
-  # or substring matching on string fpaths (if 'flows' in 'flows/*.json': ...)?
-
-
-# for group, dpkg, path_zip in dpkg_zips:
-    # with zf.Path(PATH_CACHE / 'elementary_flow_list.zip') as z:
-    # dedup['elementary_flow_list']['flow'] 
-    
-# path_zip = PATH_CACHE / 'elementary_flow_list.zip'
-# temp = [x for x in zf.ZipFile(path_zip).infolist()]
-# temp = [x for x in zf.Path(path_zip).glob('**/*.json')]
-# f = temp[1]
-# f.parent.name == 'flows'
-
-# %% 2) de-duplicate objects
-merged: Dict[str, dict] = {}
-for (group, dpkg, content) in dpkg_zips:
-    added, replaced, seen = (0, 0, 0)
-    for file_path, data in iter_zip_jsons(content):
-        obj = json.loads(data.decode('utf-8'))
-        # obj = json.loads(data)
-        if not (isinstance(obj, dict) and obj.get('@id')):
-            print(f'INFO non-olca obj in {dpkg}: {file_path}')
-            continue
-        seen += 1
-        if file_path not in merged:
-            merged[file_path] = obj
-            added += 1
-        # else:
-        #     original = keep_original_entity(merged[file_path], obj)
-        #     if original is not merged[file_path]:
-        #         print(f'Replacing duplicate {obj.get('@type')} with original from {dpkg}')
-        #         merged[file_path] = original
-        #         replaced += 1
-    print(f'Merged {group}/{dpkg}: seen={seen:,} added={added:,} replaced={replaced:,}')
-
-print(f'\nTotal distinct entities after merge: {len(merged):,}')
-# %% 3) write merged set of objects to new .ZIP
-with zf.ZipFile(PATH_OUT_ZIP, 'w', compression=zf.ZIP_DEFLATED) as zout:
-    for file_path, obj in merged.items():
-        data = json.dumps(obj, separators=(',', ':'))
-                           # indent=2, sort_keys=True,  # long-format JSON
-        if file_path == 'sources/3a3c9163-5178-373d-b547-714ad35f00db.json':
-            with open('test.json', 'w') as f:
-                json.dump(obj, f, separators=(',',':'), ensure_ascii=True)
-        zout.writestr(file_path, data)
-print(f'\nWrote combined package: {PATH_OUT_ZIP}')
-
-
-# %%
-
-def iter_json_members(zip_bytes: bytes):
-    """Yield (file_path, obj) for each *.json entry inside the JSON-LD ZIP."""
-    # index JSONs via zf.ZipFile().namelist() or zf.Path.rglob()
-    with zf.ZipFile(io.BytesIO(zip_bytes)) as z:
-        for file_path in z.namelist():
-            if (not file_path.endswith('.json')
-                or file_path.startswith('bin/')
-                or file_path in ['categories.json', 'openlca.json']):
-                continue
-            data = z.read(file_path)
-            # try:
-            #     obj = json.loads(data.decode('utf-8'))
-            # except Exception:
-            #     print(f'WARNING non-UTF-8 text in JSON: {file_path}')
-            #     obj = json.loads(data.decode('latin-1'))
-            yield file_path, data
-    # zip_paths = zf.Path(io.BytesIO(zip_bytes)).rglob('*.json')
-    # return [(file_path, json.loads(file_path.read_text(encoding='utf-8')))
-    #         for file_path in zip_paths]
-    # note: file_path.at yields same str form as z.namelist() entries
-
-# %% OLD
-def main() -> int:
-    # %% 1) download each data package as .zip (bytes) of JSON-LD
-    dpkg_zips: List[Tuple[str, str, bytes]] = []
-    for group, dpkg in DATA_PACKAGES_BUILD:
-        try:
-            print(f'Preparing {group}/{dpkg}')
-            token = prepare_download_token(group, dpkg)
-            print(f'  token: {token}')
-            content = download_dpkg(token, dpkg)
-            print(f'  downloaded: {len(content):,} bytes')
-            dpkg_zips.append((group, dpkg, content))
-        except Exception as e:
-            msg = f'ERROR downloading {group}/{dpkg}: {e}'
-            print(msg)
-            # return 2
-# %%    
-    if not DEVELOPER_MODE:
-        # skip the in-memory bytes --> dict (inspectable) --> bytes steps
-        with zf.ZipFile(PATH_OUT_ZIP, 'w', compression=zf.ZIP_DEFLATED) as zout:
-            files_written = set()
-            for group, dpkg, content in dpkg_zips:
-                for file_path, data in iter_json_members(content):
-                    if file_path not in files_written:
-                        zout.writestr(file_path, data)
-                        files_written.add(file_path)
+    dpkgs_build = {dpkg for (group, dpkg) in DATA_PACKAGES_BUILD}    
+    if not dedup_orig.keys() <= dpkgs_build:
+        print(f'ERROR: one or more data packages listed as a top-level key '
+              'in deduplicate.yaml is not available in DATA_PACKAGEs_BUILD:\n'
+              f'{dedup_orig.keys() - dpkgs_build}')
+        return None
     else:
-    # %% 2) de-duplicate objects
-        merged: Dict[str, dict] = {}
-        for (group, dpkg, content) in dpkg_zips:
-            added, replaced, seen = (0, 0, 0)
-            for file_path, data in iter_json_members(content):
-                obj = json.loads(data.decode('utf-8'))
-                # obj = json.loads(data)
-                if not (isinstance(obj, dict) and obj.get('@id')):
-                    print(f'INFO non-olca obj in {dpkg}: {file_path}')
-                    continue
-                seen += 1
-                if file_path not in merged:
-                    merged[file_path] = obj
-                    added += 1
-                # else:
-                #     original = keep_original_entity(merged[file_path], obj)
-                #     if original is not merged[file_path]:
-                #         print(f'Replacing duplicate {obj.get('@type')} with original from {dpkg}')
-                #         merged[file_path] = original
-                #         replaced += 1
-            print(f'Merged {group}/{dpkg}: seen={seen:,} added={added:,} replaced={replaced:,}')
-        
-        print(f'\nTotal distinct entities after merge: {len(merged):,}')
-        # %% 3) write merged set of objects to new .ZIP
-        with zf.ZipFile(PATH_OUT_ZIP, 'w', compression=zf.ZIP_DEFLATED) as zout:
-            for file_path, obj in merged.items():
-                data = json.dumps(obj, separators=(',', ':'))
-                                   # indent=2, sort_keys=True,  # long-format JSON
-                if file_path == 'sources/3a3c9163-5178-373d-b547-714ad35f00db.json':
-                    with open('test.json', 'w') as f:
-                        json.dump(obj, f, separators=(',',':'), ensure_ascii=True)
-                zout.writestr(file_path, data)
-    print(f'\nWrote combined package: {PATH_OUT_ZIP}')
-    return 0
+        dedup = defaultdict(set)
+        for dpkg, uuids_by_type in dedup_orig.items():
+            for _type, uuids in uuids_by_type.items():
+                for dpkg_other in (dedup_orig.keys() - {dpkg}):
+                    if uuids is not None:
+                        dedup[dpkg_other].update(
+                            {f'{_type}/{uuid}.json' for uuid in uuids})
+        return dedup
+        ## alternatively, invert dedup_orig into {dpkg: {_type: [uuids_to_ignore]}}
+        # dedup = defaultdict(lambda: defaultdict(set))
+        # for dpkg, objs_type in dedup_orig.items():
+        #     for _type, objs_type_dpkg in objs_type.items():
+        #         for dpkg_other in (dedup_orig.keys() - {dpkg}):
+        #             if objs_type_dpkg is not None:
+        #                 dedup[dpkg_other][_type].update(objs_type_dpkg)
+        # return dedup
+        ## and then, separately convert to .zip-relative-path strings
+        # objs_ignore = [f'{_type}/{uuid}.json' 
+        #                for _type, uuids in dedup[dpkg].items() 
+        #                for uuid in uuids]
 
-# TODO: write JSON index of objects w/i dpkgs after de-dup
-    # {dpkg_name: [uuid, ...], ...} or 
-    # {dpkg_name: {@type: [uuid, ...], ...}, ...}
+
+def iter_dpkg_zip_jsons(dpkg: str, dedup: dict) -> (zf.ZipInfo, str):
+    """
+    Generate an iterable over the JSON-LD items within a dpkg .zip archive, 
+    ignoring non-JSON, binary, and root-level files.
+    """
+    objs_ignore = dedup[dpkg]
+    with zf.ZipFile(PATH_CACHE / f'{dpkg}.zip', 'r') as z:
+        # z_path = zf.Path(z)
+        for metadata in z.infolist():
+            # file_path = z_path / metadata.filename
+            file_path = metadata.filename  # str, file path within .zip
+            if (not file_path.endswith('.json')
+                or file_path.startswith('bin/')
+                or file_path in objs_ignore
+                or file_path in ['categories.json', 'openlca.json']
+                ): continue
+            with z.open(file_path) as data:
+                yield metadata, data
+
+
+def update_refs():
+    """
+    Import update_Refs.yaml and apply its alterations on the JSON objects
+    already deduplicated and copied into USLCI+.zip
+    """
+    with (PATH_SCRIPT / "update_Refs.yaml").open() as f:
+        ref_updates = yaml.safe_load(f)
+    # TODO
+    with zf.ZipFile(PATH_OUT_ZIP, 'a') as z:
+        z_path = zf.Path(z)
+        objs_to_update = [file_path for file_path in z_path.glob('**/*.json')
+                          if file_path.stem in ref_updates.keys()]
+        for file_path in objs_to_update:  # z.infolist():
+            with z.open(file_path, 'a') as file_data:
+                # TODO: 
+                    # read obj into memory, index via ref_updates[file_path.stem]
+                    # or, compile regex substitution and apply 
+                pass
+
+
+def build_uslci_plus(dedup: dict,
+                     dpkg_list: Set[Tuple[str, str]] = DATA_PACKAGES_BUILD, 
+                     ):
+    """
+    Merge the set of objects from feedstock dpkgs listed in DATA_PACKAGES_BUILD 
+    into USLCI+, while (1) avoiding duplicated-UUID collissions, and (2) 
+    overwriting .Ref pointers embedded in select objects to facilitate inter-dpkg
+    linking and seamless DB import + usage in openLCA Desktop.
+    """
+    # TODO: (later) intersect** dpkg flows with FEDEFL elem. and USEEIO tech.
+        # for each match, skip dpkg write and instead write from FEDEFL or USEEIO to USLCI+.zip
+        # **using set logic on .zip-relative file paths (unless k-v {_type: uuid} pairs are essential)
+    # TODO: (later) parallelize copying tasks via `multiprocessing`
+    # TODO: check if zip-to-zip copy w/o recompression is implemented in latest base Python
+    flows_fedefl = {f for f in zf.ZipFile(PATH_CACHE / 'elementary_flow_list.zip').namelist()
+                    if f.startswith('flows/') and f.endswith('.json')}
+    flows_useeio = ({f for f in zf.ZipFile(PATH_CACHE / 'USEEIO_v2.zip').namelist()
+                     if f.startswith('flows/') and f.endswith('.json')}
+                    - flows_fedefl)
+    with zf.ZipFile(PATH_OUT_ZIP, 'w') as zip_target:  # compression=zf.ZIP_DEFLATED
+        files_written = set()
+        for group, dpkg in DATA_PACKAGES_BUILD:
+            # copy JSONs from {dpkg}.zip to uslci+.zip
+            for metadata, data in iter_dpkg_zip_jsons(dpkg, dedup):
+                if metadata.filename in files_written:
+                    if not metadata.filename.startswith(('processes/', 'flows/')):
+                        print('INFO duplicate @type not yet addressed by deduplicate.yaml:',
+                              f'\n\t{dpkg} - {metadata.filename}')
+                    elif metadata.filename in flows_fedefl:
+                        pass
+                    elif metadata.filename in flows_useeio:
+                        # print('INFO USEEIO flow not yet addressed by deduplicate.yaml:',
+                        #       f'\n\t{dpkg} - {metadata.filename}')
+                        pass
+                    else:
+                        print('WARNING duplicate not yet addressed by deduplicate.yaml:',
+                              f'\n\t{dpkg} - {metadata.filename}')
+                else:
+                    zip_target.writestr(metadata, data.read())
+                    files_written.add(metadata.filename)
+            # TODO: update refs
+            # update_refs(dpkg)
+        print(f'\nWrote combined package: {PATH_OUT_ZIP}')
+        
+
+def main() -> int:
+    for group, dpkg in (DATA_PACKAGES_BUILD | DATA_PACKAGES_CORE):
+        download_dpkg(group, dpkg)
+    dedup = compile_deduplication_index()
+    build_uslci_plus(dedup)
+    return 0
+    
+
 # %%
 if __name__ == '__main__':
     sys.exit(main())

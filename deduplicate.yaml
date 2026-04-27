@@ -2,17 +2,19 @@
 # FEDEFL: de facto parent of all elem. flows on FLCAC dpkgs
 # USEEIO: de facto parent of all tech. flows within it
 
-US_electricity_baseline:
-  process:
+# Note: under each top-level dpkg key, @type keys must be pluralized to match folder names in .ZIPs from FLCAC
 
-  flow:
+US_electricity_baseline:
+  processes:
+
+  flows:
     - 3bca3bc6-2443-3184-8976-72dc98d258f6
 
 
 Woody_biomass:
-  process:
+  processes:
 
-  flow:
+  flows:
     # Flow.name issues in USLCI:
     - fb62f38b-09c1-42c0-aaa1-53a1c7b53200
     # only CORRIM contains default providers; to-be-migrated to USFS:
@@ -39,13 +41,14 @@ Woody_biomass:
 
 
 USLCI_Database_Public:
-  process:
+  processes:
     # USLCI to USEEIO bridges:
     - 442ab5b5-32f4-4de0-9aa7-fa989b0579af
     - 6af5ef7b-10c2-4e38-b956-05780573b9ce
-  flow:
+  flows:
     # USEEIO bridge flows:
     - a6bee800-f46c-4933-a6be-05305133d239
+    - 73c55a19-ecdc-3918-8dcb-8e6f7f1bf9bd
     # woody biomass flows, but choose USLCI (updated names) for now:
     - 31948a1f-886a-3020-b33b-d381a427dbc6
     - dac6904f-42a7-3229-95d4-39c316fbd8e3
@@ -57,6 +60,7 @@ USLCI_Database_Public:
      # migrate to 'Single-provider flows' once FHWA issue is resolved:
     - 628c07ec-0802-39c1-ab88-1c62848ef436
     # Single-provider flows (ToDo: compile programmatically):
+    - 0178afd7-c74a-3a8f-8f15-d57904d3c377
     - 0def374e-dc34-4f2a-81d6-1a8f4eb7faa6
     - 0e44e579-abb0-3c77-af64-c774d65be529
     - 1e68baef-0ed7-37bb-9919-61963f9fbd08
