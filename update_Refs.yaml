@@ -1,0 +1,80 @@
+# For select Process.Exchange objects, overwrite .defaultProvider and/or .flow.@id Ref(s),
+# so as to link objects across FLCAC data packages (dpkg).
+
+# Ref update format:
+  # alias_dpkg:
+  #   Process.@id:                        # target Process object
+  #     Exchange.flow.@id:                # target Exchange(s) from Process.exchanges, where Exchange.isInput=true
+  #       flow.@id: Flow.@id                     # [optional] replacement Flow UUID for the Exchange.flow; delete original Flow if "CUTOFF" in Flow.category
+  #       defaultProvider: Process.@id           # [optional] new or replacement Process UUID for the Exchange.defaultProvider
+  #       drop_bridge: Process.@id               # [optional] target BRIDGE Process to delete within alias_dpkg data package
+  #       - use_internalId: Exchange.internalId  # [optional] where N Exchanges use same .flow but need different .defaultProvider, target via .InternalId
+                                                   # NOTE: when targeting exchanges via `use_internalId`, the {flow.@id, defaultProvider, drop_bridge} keys become list-element keys under it
+
+# ISSUE: neither .internalId nor .flow.@id are sufficient unique identifiers for an Exchange; need their own @id
+  # .internalId can change as a byproduct of adding or deleting other Exchange objects
+  # .flow.@id can be duplicated across input and ouput Exchanges 
+
+
+USLCI_Database_Public:
+  # linking via bridge processes:
+  331207ab-8a06-400e-bace-9657a3e10732:
+    3a0a003d-e41e-4332-be8a-cd93fbfc1:
+      defaultProvider: 22e58fa0-fd94-4b4a-9f65-bf9f5204defc
+
+  # or, linking w/o bridges:
+  7fa00b86-ca0f-321a-94a6-c8f68338a7cb: 
+    549ad7af-b32f-3273-bef2-3af7a816b8fd: &dry_rough_lumber
+      flow.@id: 3a0a003d-e41e-4332-be8a-cd93fbfc1974
+      defaultProvider: 22e58fa0-fd94-4b4a-9f65-bf9f5204defc
+      drop_bridge: 331207ab-8a06-400e-bace-9657a3e10732
+  
+  6c0996a5-8104-3770-ae44-aba5a65fa3c3:
+    549ad7af-b32f-3273-bef2-3af7a816b8fd: *dry_rough_lumber
+
+
+Woody_biomass:
+  # # linking via bridge processes:
+  # 1fbc66a5-291d-4b92-8e53-51302d34e39:
+  #   3bca3bc6-2443-3184-8976-72dc98d258f6:
+  #     defaultProvider: 519b0000-9e11-3a0d-96d8-fe0ce2f63ec8
+
+  # 38cefa84-359f-4282-ad72-1006ea44f60f:
+  #   3bca3bc6-2443-3184-8976-72dc98d258f6:
+  #     defaultProvider: c1962910-12ba-3595-a94d-c61a9e57e0d2
+ 
+  # or, linking w/o bridges:
+  45fa47fa-15bc-4328-a8d9-2512809edfa2:
+    3bca3bc6-2443-3184-8976-72dc98d258f6:
+    
+    - use_internalId: 5  # as of release v1.2026-04.0
+      defaultProvider: 519b0000-9e11-3a0d-96d8-fe0ce2f63ec8
+      drop_bridge: 1fbc66a5-291d-4b92-8e53-51302d34e39
+    - use_internalId: 2  # as of release v1.2026-04.0
+      defaultProvider: c1962910-12ba-3595-a94d-c61a9e57e0d2
+      # drop_bridge: 38cefa84-359f-4282-ad72-1006ea44f60f  # ISSUE: bridge used by 7 other processes
+
+
+  0fc3aa0c-865f-33b1-92d7-4db5ad1c8c1c:
+    3bca3bc6-2443-3184-8976-72dc98d258f6:  # affects all 3x Elec.-AC-120V input exchanges, which use same provider
+      defaultProvider: c1962910-12ba-3595-a94d-c61a9e57e0d2
+
+  95b6f5db-b820-40a4-b485-1a8ce0b99ce1:
+    3bca3bc6-2443-3184-8976-72dc98d258f6:
+      defaultProvider: c1962910-12ba-3595-a94d-c61a9e57e0d2
+    a5c7d642-4e3a-40af-a919-a2f7601340b0:
+      # superfluous entry example (i.e., only 1 provider exists across the FLCAC, currently) 
+      defaultProvider: 2a78de43-fdf2-4c5f-b527-89db6568ace8  
+   
+
+
+
+# USLCI_Database_Public:
+#   Processes: 
+#     - 331207ab-8a06-400e-bace-9657a3e10732:
+#       - Exchange: 3a0a003d-e41e-4332-be8a-cd93fbfc1
+#         defaultProvider: 22e58fa0-fd94-4b4a-9f65-bf9f5204defc
+#         flow.@id: N/A
+#     - 1fbc66a5-291d-4b92-8e53-51302d34e39
+#         defaultProvider: 22e58fa0-fd94-4b4a-9f65-bf9f5204defc
+#         flow.@id: N/A
