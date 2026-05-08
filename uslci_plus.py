@@ -33,6 +33,7 @@ from platformdirs import user_data_dir
 
 
 PATH_SCRIPT = Path(__file__).parent
+PATH_CONFIG = PATH_SCRIPT / 'config'
 # PATH_OUT = PATH_SCRIPT / 'output'  # TODO: implement logging + output here
 PATH_OUT_ZIP = PATH_SCRIPT / 'USLCI+.zip'
 PATH_CACHE = Path(user_data_dir(appauthor='FLCAC', appname='uslci+'))  # ~/FLCAC/uslci+
@@ -125,7 +126,7 @@ def compile_dedup_and_ref_indices() -> (dict, dict):
     (1) a dict of {parent/original dpkg: UUIDs duplicated in other dpkgs}, to
     (2) a dict of {dpkg: .zip-relative file paths of JSONs to ignore in dpkg}
     """
-    with (PATH_SCRIPT / "deduplicate.yaml").open() as f:
+    with (PATH_CONFIG / "deduplicate.yaml").open() as f:
         dedup_orig = yaml.safe_load(f)
     
     dpkgs_build = {dpkg for (group, dpkg) in DATA_PACKAGES_BUILD}    
@@ -142,7 +143,7 @@ def compile_dedup_and_ref_indices() -> (dict, dict):
                     if uuids is not None:
                         dedup[dpkg_other].update(
                             {f'{_type}/{uuid}.json' for uuid in uuids})
-    with (PATH_SCRIPT / "update_Refs.yaml").open() as f:
+    with (PATH_CONFIG / "update_Refs.yaml").open() as f:
         ref_updates = {}
         for dpkg, sub_dict in yaml.safe_load(f).items():
             if dpkg in dpkgs_build:
