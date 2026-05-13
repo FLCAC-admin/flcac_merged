@@ -1,0 +1,89 @@
+Argonne_National_Lab:
+  Concrete:
+    1.2025-02.0: 8ab016428f4a4ceaa618ee641498b660651eb63e
+CORRIM:
+  Forestry_and_forest_products:
+    1.2019-12.0: ae49ea9622836b63ca23eb3926790ab928577d39
+Federal_Highway_Administration:
+  mtu_pavement:
+    1.2021-10.0: 58bed05c6469c424e55d27b93ea44ac209e5989c
+    1.2025-08.0: bfb4d3efa3694e08eb022086082b3138ed4187d7
+Federal_LCA_Commons:
+  CED_Method:
+    1.2021-10.0: 01cb524e3ff80519846929f59dd67aebd378c758
+    1.2024-12.0: 9ce9b28e019f94ff9cf7596b3e04ba2db70f6100
+  FEDEFL_Inv:
+    1.2024-12.0: 12d2da0357bf549220b1fd4a036e7d00ddbd7814
+  Fed_Commons_core_database:
+    1.2019-09.0: 9eae11708e02404b7a3b5749f200038452a6251d
+  IPCC_GWP:
+    1.2024-12.0: cbd5216d1305e90b095eb63b0a62a6f8eefe7130
+  Impact_World_Plus:
+    1.2024-12.0: 0ced9f11f4fe8e13bb03cc88eede830b93d71992
+  ReCiPe:
+    1.2024-06.0: be7be49b34721f0e24e46c5a4f3e341d2cdba4be
+    1.2024-12.0: 5d9bf5866c5e96fb9703f5d42ea1534aecefeeab
+  TRACI:
+    1.2024-06.0: 76549c7c7a3bb984d1e808bdcc91143fa957cbb2
+  TRACI_2_2:
+    1.2025-04.0: b7221a76f75c5fb720ae310fbfba73fdc996741a
+  US_electricity_baseline:
+    1.2020-08.0: feae44943f7984498ed2aad7d931b74f34f8bca4
+    1.2025-06.0: 9581404a9c3f6903d5614a7af9436bfb9c9676b7
+  elementary_flow_list:
+    1.2024-05.0: e8b7bf06a949a1dd423f93ebf926b96934de427b
+    1.2024-12.0: 6f84d4b90dea264b3d0a2daa7d71e6bdf4f67c66
+    1.2024-12.1: e77e156bd45c746f34f659c0506a8a7d9cbd5693
+NC_State_Dept_Forest_Biomaterials:
+  Kraft_pulp:
+    Public: b51b4ed0978e98cf29825573887fb792f290284c
+NIST:
+  Building_Systems:
+    1-2025.07.0: 7a0c399a21710faa17103775fe00a03aaa8ca96c
+    1-2025.09.0: 0831ca897a79eb59d8dfdc3046a75dc395d4706e
+  construction_materials:
+    1.2025-06.0: 69c6073dc2ae70993ce670a0143009ef56534b68
+    1.2025-07.0: 70de0796f562174b60fec8aaf7008d1a89ab4eda
+National_Energy_Technology_Lab:
+  Coal_extraction:
+    1.2018-08.0: 919f7d4448fae4f4eb419cd8a3e8808de5da9068
+    1.2025-07.0: bd313b4ed307bc2e2ed26bad486b2b35dd502069
+National_Renewable_Energy_Laboratory:
+  USLCI_Database_Public:
+    1.2024-06.0: 7d7143983462ce7c48bf8d64bccbe5cafda11c45
+    1.2024-10.0: c53aed355741a068d615f1a7674a2c6218ce98dd
+    1.2024-12.0: c46436821cedb106a7eebd8220117d00b6590a43
+    1.2025-03.0: 2d6ba2b50f0d6696f282cddefe614ed870526f3c
+    1.2025-06.0: 978870b1695caa9519f55aa5904dfd348a823623
+    1.2025-09.0: dc6512bf1ad2eed99af8ff611962a183814252f2
+    1.2025-12.0: f24d3d71ceab3d3928d126b6e7e4b09278f64ec0
+    1.2025-12.1: 6ab6f747d5285e985aeb4299cb760552b3e4c0b6
+    1.2026-03.0: 00a040571f44a37517a3e8ebb1dfb54d8dd09c4a
+US_Environmental_Protection_Agency:
+  Construction_and_demolition_2022_update_2:
+    1.2023-04.0: ef1bf225ce916668b5fdfd1ec6954729cdaa0d62
+    1.2025-07.0: 16a0bf96229cea0871bcfff4e64b3f32454ed5e1
+  Heavy_equipment_operation:
+    1.2022-04.0: 7dd24d5772e4f7ac606cfa6b0696a1b0fc3f8d14
+    1.2025-07.0: 8f8670f25cb2678d95693c353f424ef06fa0e16b
+  USEEIO:
+    1.2018-05.0: dfc76d455baa233bd8340d13ec73761f4f3f9fd7
+  USEEIO_v2:
+    1.2022-06.0: 86f9efb78ee9af4d9547973339a326e56c38b536
+  construction_epd_indicators:
+    1.2024-6.0: 52b9111c8e040f51d16316c0c22a902a19b5cff9
+US_Forest_Service_Forest_Products_Lab:
+  Woody_biomass:
+    1.2019-11.0: 4d10b534cb599b85ffc42c58f7d6687400b8bca8
+    1.2025-05.0: ba4fc551797e08e85ca2682f88127e280eaf8a8d
+    1.2025-08.0: 3f2437715c0172e4e618205817dcf3445660995d
+    1.2026-04.0: b06b947adbfad9ce22b2092be7f35eebaafd47ae
+    1.2026-05.1: 77f4b28d63571a93d43badf45ddb0c6a3134ed23
+U_Washington_Design_for_Environment_Laboratory:
+  Field_crop_production:
+    Public: a5896e3e35eb4b665f0289826dae0a28ea83677a
+University_of_Arkansas:
+  Beef_production:
+    Public: 30a392a593f32f6fd94b89ec561a00d9418acede
+  Swine:
+    Public: cf513cb07b5ccafaf22bd5587d0e93df7df9048a
