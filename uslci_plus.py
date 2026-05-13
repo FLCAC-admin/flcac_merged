@@ -23,6 +23,7 @@ Rules for deduplicating same-UUID objects:
 
 import json
 import sys
+import tomllib
 import zipfile as zf
 from collections import defaultdict
 from pathlib import Path
@@ -40,15 +41,11 @@ PATH_CACHE = Path(user_data_dir(appauthor='FLCAC', appname='uslci+'))  # ~/FLCAC
 PATH_CACHE.mkdir(parents=True, exist_ok=True)
 
 
+# Base URLs of FLCAC API & whole-dpkg-download endpoints
+BASE_URL = 'https://www.lcacommons.gov/lca-collaboration/ws/public'
+BASE_URL_DOWNLOAD = f'{BASE_URL}/download/json'
+
 SESSION = requests.Session()
-
-# Base URL of FLCAC API endpoint to download whole dpkgs
-BASE_URL = 'https://www.lcacommons.gov/lca-collaboration/ws/public/download/json'
-
-# TODO: add function to compile index of available dpkg versions via 
-    # FLCAC API's anonymous repo history endpoint:
-    # https://usda-ree-ars.github.io/lca-api-doc/#/History/getRepositoryCommitHistory
-    # https://www.lcacommons.gov/lca-collaboration/ws/public/history/National_Renewable_Energy_Laboratory/USLCI_Database_Public
 
 # TODO: support optional specification of version identifier in each dpkg tuple,
     # where omission defaults to latest release
@@ -77,21 +74,90 @@ DATA_PACKAGES_BUILD: set(tuple(str, str)) = {
 
 
 # %%
-def prepare_download_token(group: str, dpkg: str) -> str:
+def _nested_dict():
+    return defaultdict(_nested_dict)
+
+
+def _sort_releases(INDEX: dict):
+    pass
+
+
+def compile_dpkg_release_index():
+    """
+    Fetch all available dpkgs and releases thereof via FLCAC API, then write 
+    metadata to ./config/data_packages.yaml
+    """
+    url = f'{BASE_URL}/repository'
+    r = SESSION.get(url)
+    r.raise_for_status()
+    metadata_dpkgs = r.json()
+    index = _nested_dict()
+    for dpkg in metadata_dpkgs:
+        group, name = dpkg['group'], dpkg['name']
+        print(f'Compiling releases for {group}/{name}')
+        if not dpkg['hasReleases']:
+            print(f'INFO: data package has no releases - {dpkg["name"]}')
+            index[dpkg['group']][dpkg['name']] = ''
+        else:
+            url = f'{BASE_URL}/history/{group}/{name}'
+            r = SESSION.get(url)
+            r.raise_for_status()
+            dpkg_releases = r.json()
+            for release in dpkg_releases:
+                info = release['releaseInfo']
+                index[dpkg['group']][dpkg['name']][info['version']] = info['commitId']
+    
+    yaml.SafeDumper.add_representer(defaultdict, yaml.representer.Representer.represent_dict)
+    with (PATH_CONFIG / 'data_packages.yaml').open('w') as _file:
+        yaml.safe_dump(index, _file)
+    # return index
+
+
+def import_dpkg_release_index() -> dict:
+    with (PATH_CONFIG / 'data_packages.yaml').open() as _file:
+        return yaml.safe_load(_file)
+    
+
+def import_manifest(
+        file_path: Path = PATH_CONFIG / 'manifest.toml',
+        ) -> dict:
+    with (file_path).open('rb') as f:
+        manifest = tomllib.load(f)
+        # TODO: validate manifest against available versions in data_packages.yaml
+        # TODO: define DATA_PACKAGES_BUILD via manifest and DATA_PACKAGES_CORE via index
+        # TODO: accept optional commitID query param for download endpoint
+          # where dependency (dpkg, version) gets commitId value from dpkg index
+          # ?commitId=abc...123
+        return manifest
+
+
+
+def prepare_download_token(
+        group: str, 
+        dpkg: str,
+        commitId: str | None = None,
+        ) -> str:
     """ 
     Ask the server to prepare a data package for download, for which it 
     provides a unique token to get the content.
     """
-    url = f'{BASE_URL}/prepare/{group}/{dpkg}'
+    if not commitId:
+        url = f'{BASE_URL_DOWNLOAD}/prepare/{group}/{dpkg}'
+    else:
+        url = f'{BASE_URL_DOWNLOAD}/prepare/{group}/{dpkg}?commitId={commitId}'
     r = SESSION.get(url)
     r.raise_for_status()
-    token = r.content.decode().strip()
+    token = r.json()
     if not token:
         raise RuntimeError(f'Empty token for {group}/{dpkg}; response={r.text[:200]}')
     return token
 
 
-def download_dpkg(group: str, dpkg: str):
+def download_dpkg(
+        group: str, 
+        dpkg: str,
+        commitId: str | None = None,
+                  ):
     """
     Download and cache the prepared data package via the token.
     
@@ -100,13 +166,22 @@ def download_dpkg(group: str, dpkg: str):
         dpkg: data package name
     Returns:
     """
-    path_zip = PATH_CACHE / f'{dpkg}.zip'
+    if not commitId:
+        # TODO: match {group, dpkg} to latest version in INDEX
+        path_zip = PATH_CACHE / f'{dpkg}.zip'  
+        # TODO: instead, use latest release version
+    else:
+        # TODO: match {group, dpkg, commitId} to a version in INDEX
+        # version = INDEX[group][dpkg]
+        version = 'foo'
+        path_zip = PATH_CACHE / f'{dpkg}--{version}.zip'  
+
     if not path_zip.exists():
         print(f'Preparing {group}/{dpkg}')
         try:    
             token = prepare_download_token(group, dpkg)
             print(f'\tToken: {token}')
-            r = SESSION.get(f'{BASE_URL}/{token}')
+            r = SESSION.get(f'{BASE_URL_DOWNLOAD}/{token}')
             r.raise_for_status()
             print(f'\tDownloaded: {len(r.content):,} bytes')
         except Exception as e:
@@ -295,6 +370,8 @@ def build_uslci_plus(dedup: dict,
         
 
 def main() -> int:
+    compile_dpkg_release_index()
+    INDEX = import_dpkg_release_index()
     for group, dpkg in (DATA_PACKAGES_BUILD | DATA_PACKAGES_CORE):
         download_dpkg(group, dpkg)
     dedup, ref_updates = compile_dedup_and_ref_indices()

@@ -1,0 +1,10 @@
+[package]
+name = "uslci+"
+version = "0.1.0"
+repository = "https://github.com/FLCAC-admin/uslci_plus/"
+
+[dependencies]
+USLCI_Database_Public = "v1.2026-MM.0"
+US_electricity_baseline = "v1.2026-MM.0"
+Woody_biomass = "v1.2026-MM.0"
+# USEEIO_v2 = "v1.2026-MM.0"
