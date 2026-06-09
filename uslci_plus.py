@@ -34,6 +34,9 @@ import yaml
 from platformdirs import user_data_dir
 
 
+yaml.SafeDumper.add_representer(
+    defaultdict, yaml.representer.Representer.represent_dict)
+
 PATH_SCRIPT = Path(__file__).parent
 PATH_CONFIG = PATH_SCRIPT / 'config'
 
@@ -72,15 +75,6 @@ DATA_PACKAGES_BUILD: set(tuple(str, str)) = {
     ('Federal_LCA_Commons', 'US_electricity_baseline'),
     ('US_Forest_Service_Forest_Products_Lab', 'Woody_biomass'),
     ('US_Environmental_Protection_Agency', 'USEEIO_v2'),
-    # ('US_Environmental_Protection_Agency', 'Construction_and_demolition_2022_update_2'),
-    # ('US_Environmental_Protection_Agency', 'Heavy_equipment_operation'),
-    # ('National_Energy_Technology_Lab', 'Coal_extraction'),
-    # ('Federal_Highway_Administration', 'mtu_pavement'),
-    # ('NIST', 'construction_materials'),
-    # ('NIST', 'Building_Systems'),
-    # ('Argonne_National_Lab', 'Concrete'),
-    # # deprecated
-    # ('CORRIM', 'Forestry_and_forest_products'),
 }
 
 
@@ -89,46 +83,45 @@ def _nested_dict():
     return defaultdict(_nested_dict)
 
 
-def _sort_releases(INDEX: dict):
-    pass
-
-
 def compile_dpkg_release_index():
     """
     Fetch all available dpkgs and releases thereof via FLCAC API, then write 
     metadata to ./config/data_packages.yaml
     """
-    url = f'{BASE_URL}/repository'
+    url = f'{BASE_URL}/repository'  # list public dpkg repos
     r = SESSION.get(url)
     r.raise_for_status()
     metadata_dpkgs = r.json()
+    
     index = _nested_dict()
-    for dpkg in metadata_dpkgs:
+    for dpkg in sorted(metadata_dpkgs, 
+                       key=lambda d: (d['group'].lower(), d['name'].lower())):
         group, name = dpkg['group'], dpkg['name']
-        print(f'Compiling releases for {group}/{name}')
         if not dpkg['hasReleases']:
-            print(f'INFO: data package has no releases - {dpkg["name"]}')
+            log.warning(f'Data package has no releases: {dpkg["name"]}')
             index[dpkg['group']][dpkg['name']] = ''
         else:
-            url = f'{BASE_URL}/history/{group}/{name}'
+            url = f'{BASE_URL}/history/{group}/{name}'  # list all releases
             r = SESSION.get(url)
             r.raise_for_status()
             dpkg_releases = r.json()
-            for release in dpkg_releases:
+            for release in dpkg_releases:  # already ordered newest-to-oldest
                 info = release['releaseInfo']
                 index[dpkg['group']][dpkg['name']][info['version']] = info['commitId']
     
-    yaml.SafeDumper.add_representer(defaultdict, yaml.representer.Representer.represent_dict)
     with (PATH_CONFIG / 'data_packages.yaml').open('w') as _file:
-        yaml.safe_dump(index, _file)
-    # return index
+        yaml.safe_dump(index, _file, sort_keys=False, indent=4)
 
 
-def import_dpkg_release_index() -> dict:
-    with (PATH_CONFIG / 'data_packages.yaml').open() as _file:
-        return yaml.safe_load(_file)
-    
+# compile and load index of available dpkgs
+if not (PATH_CONFIG / 'data_packages.yaml').exists():
+    compile_dpkg_release_index()
 
+with (PATH_CONFIG / 'data_packages.yaml').open() as _file:
+    INDEX_DPKG = yaml.safe_load(_file)
+
+
+# %%
 def import_manifest(
         file_path: Path = PATH_CONFIG / 'manifest.toml',
         ) -> dict:
@@ -379,8 +372,6 @@ def build_uslci_plus(dedup: dict,
         
 
 def main() -> int:
-    compile_dpkg_release_index()
-    INDEX = import_dpkg_release_index()
     for group, dpkg in (DATA_PACKAGES_BUILD | DATA_PACKAGES_CORE):
         download_dpkg(group, dpkg)
     dedup, ref_updates = compile_dedup_and_ref_indices()
