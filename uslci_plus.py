@@ -22,6 +22,7 @@ Rules for deduplicating same-UUID objects:
 """
 
 import json
+import logging
 import sys
 import tomllib
 import zipfile as zf
@@ -35,11 +36,21 @@ from platformdirs import user_data_dir
 
 PATH_SCRIPT = Path(__file__).parent
 PATH_CONFIG = PATH_SCRIPT / 'config'
-# PATH_OUT = PATH_SCRIPT / 'output'  # TODO: implement logging + output here
-PATH_OUT_ZIP = PATH_SCRIPT / 'USLCI+.zip'
+
 PATH_CACHE = Path(user_data_dir(appauthor='FLCAC', appname='uslci+'))  # ~/FLCAC/uslci+
 PATH_CACHE.mkdir(parents=True, exist_ok=True)
 
+PATH_OUT = PATH_SCRIPT / 'output'
+PATH_OUT.mkdir(parents=True, exist_ok=True)
+
+logging.basicConfig(
+    filename=(PATH_OUT / 'app.log'),
+    format = "%(asctime)s [%(levelname)8s] %(name)s:%(lineno)s %(message)s",
+    datefmt='%H:%M:%S',
+    encoding='utf-8',
+    level=logging.DEBUG,
+    )
+log = logging.getLogger(__name__)
 
 # Base URLs of FLCAC API & whole-dpkg-download endpoints
 BASE_URL = 'https://www.lcacommons.gov/lca-collaboration/ws/public'
@@ -131,7 +142,6 @@ def import_manifest(
         return manifest
 
 
-
 def prepare_download_token(
         group: str, 
         dpkg: str,
@@ -149,7 +159,8 @@ def prepare_download_token(
     r.raise_for_status()
     token = r.json()
     if not token:
-        raise RuntimeError(f'Empty token for {group}/{dpkg}; response={r.text[:200]}')
+        log.error(f'Empty token for {group}/{dpkg}; response={r.text[:200]}')
+        raise RuntimeError
     return token
 
 
@@ -177,22 +188,20 @@ def download_dpkg(
         path_zip = PATH_CACHE / f'{dpkg}--{version}.zip'  
 
     if not path_zip.exists():
-        print(f'Preparing {group}/{dpkg}')
+        log.info(f'Preparing {group}/{dpkg}')
         try:    
             token = prepare_download_token(group, dpkg)
-            print(f'\tToken: {token}')
             r = SESSION.get(f'{BASE_URL_DOWNLOAD}/{token}')
             r.raise_for_status()
-            print(f'\tDownloaded: {len(r.content):,} bytes')
+            log.info(f'\tDownloaded: {len(r.content):,} bytes')
         except Exception as e:
-            msg = f'\tERROR downloading {group}/{dpkg}: {e}'
-            print(msg)
+            log.exception(f'\tERROR downloading {group}/{dpkg}: {e}')
+            raise
         with path_zip.open('xb') as f:
             f.write(r.content)
-            print(f'\tCached: {path_zip.as_posix()}')
+            log.info(f'Downloaded and cached:\n\t{path_zip.as_posix()}')
     else:
-        print(f'Data package "{dpkg}" already cached:\n\t',
-              path_zip.as_posix())
+        log.info(f'Data package already cached:\n\t{path_zip.as_posix()}')
 
 
 def compile_dedup_and_ref_indices() -> (dict, dict):
@@ -206,10 +215,10 @@ def compile_dedup_and_ref_indices() -> (dict, dict):
     
     dpkgs_build = {dpkg for (group, dpkg) in DATA_PACKAGES_BUILD}    
     if not dedup_orig.keys() <= dpkgs_build:
-        print(f'ERROR: one or more data packages listed as a top-level key '
-              'in deduplicate.yaml is not available in DATA_PACKAGES_BUILD:\n'
-              f'{dedup_orig.keys() - dpkgs_build}')
-        return None
+        log.error('One or more data packages listed as top-level key in'
+                  'deduplicate.yaml is not available in DATA_PACKAGES_BUILD:\n'
+                  f'{dedup_orig.keys() - dpkgs_build}')
+        raise KeyError
     else:
         dedup = defaultdict(set)
         for dpkg, uuids_by_type in dedup_orig.items():
@@ -347,17 +356,17 @@ def build_uslci_plus(dedup: dict,
                 file_rpath = metadata.filename  # relative file path w/i .zip
                 if file_rpath in files_written:
                     if not file_rpath.startswith(('processes/', 'flows/')):
-                        print('INFO duplicate @type not yet addressed by '
-                              f'deduplicate.yaml:\n\t{dpkg}\n\t{file_rpath}')
+                        log.info('Duplicate @type not yet addressed by deduplicate.yaml:'
+                                 f'\n\t{dpkg}\n\t{file_rpath}')
                     elif file_rpath in flows_fedefl:
                         pass  # TODO: get FEDEFL elem. flow
                     elif file_rpath in flows_useeio:
                         pass  # TODO: get USEEIO tech. flow
                     else:
-                        print('WARNING duplicate not yet addressed by '
-                              f'deduplicate.yaml:\n\t{dpkg}\n\t{file_rpath}')
+                        log.warning('Duplicate not yet addressed by deduplicate.yaml:'
+                                    f'\n\t{dpkg}\n\t{file_rpath}')
                 elif file_rpath in bridges_drop:
-                    print(f'INFO dropped bridge:\n\t{dpkg}\n\t{file_rpath}')
+                    log.info(f'Dropped bridge:\n\t{dpkg}\n\t{file_rpath}')
                     pass
                 else:
                     data: bytes = content.read()
@@ -366,7 +375,7 @@ def build_uslci_plus(dedup: dict,
                     z.writestr(metadata, data)
                     files_written.add(file_rpath)
     
-    print(f'\nWrote combined package: {PATH_OUT_ZIP}')
+    log.info(f'Wrote combined package: {PATH_OUT_ZIP}')
         
 
 def main() -> int:
@@ -377,7 +386,7 @@ def main() -> int:
     dedup, ref_updates = compile_dedup_and_ref_indices()
     build_uslci_plus(dedup, ref_updates)
     return 0
-    
+
 
 # %%
 if __name__ == '__main__':
