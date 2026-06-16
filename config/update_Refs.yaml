@@ -1,15 +1,15 @@
 # For select Process.Exchange objects, overwrite .defaultProvider and/or .flow.@id Ref(s),
 # so as to link objects across FLCAC data packages (dpkg).
 
-# Ref update format:
-  # alias_dpkg:
-  #   Process.@id:                        # target Process object
-  #     Exchange.flow.@id:                # target Exchange(s) from Process.exchanges, where Exchange.isInput=true
-  #       flow.@id: Flow.@id                     # [optional] replacement Flow UUID for the Exchange.flow; delete original Flow if "CUTOFF" in Flow.category
-  #       defaultProvider: Process.@id           # [optional] new or replacement Process UUID for the Exchange.defaultProvider
-  #       drop_bridge: Process.@id               # [optional] target BRIDGE Process to delete within alias_dpkg data package
-  #       - use_internalId: Exchange.internalId  # [optional] where N Exchanges use same .flow but need different .defaultProvider, target via .InternalId
-                                                   # NOTE: when targeting exchanges via `use_internalId`, the {flow.@id, defaultProvider, drop_bridge} keys become list-element keys under it
+## FORMAT SPEC:
+# dpkg_alias:
+#   Process.@id:                        # target Process object
+#     Exchange.flow.@id:                # target Exchange(s) from Process.exchanges, where Exchange.isInput=true
+#       flow.@id: Flow.@id                     # [optional] replacement Flow UUID for the Exchange.flow; delete original Flow if "CUTOFF" in Flow.category
+#       defaultProvider: Process.@id           # [optional] new or replacement Process UUID for the Exchange.defaultProvider
+#       drop_bridge: Process.@id               # [optional] target BRIDGE Process to delete within alias_dpkg data package
+#       - use_internalId: Exchange.internalId  # [optional] where N Exchanges use same .flow but need different .defaultProvider, target via .InternalId
+                                                  # NOTE: when targeting exchanges via `use_internalId`, the {flow.@id, defaultProvider, drop_bridge} keys become list-element keys under it
 
 # ISSUE: neither .internalId nor .flow.@id are sufficient unique identifiers for an Exchange; need their own @id
   # .internalId can change as a byproduct of adding or deleting other Exchange objects
