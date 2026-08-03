@@ -1,0 +1,87 @@
+# TODO: refine, test
+[project]
+name = "LDPM"
+description = "LCA Data Package Manager (LDPM)"
+authors = [
+	{name = "Andrew Beck", email = "andrew.beck@erg.com"},
+]
+# readme = "README.md"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas",
+	"platformdirs",
+	"python-dotenv",
+	"pyyaml",
+	"requests"
+]
+
+scripts = { uslci_plus = "ldpm.uslci_plus:main" }
+
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+
+[tool.pixi.dependencies]
+# Installs project.dependencies from conda-forge instead of PyPI if using pixi
+python = "*"
+pandas = "*"
+platformdirs = "*"
+python-dotenv = "*"
+pyyaml = "*"
+requests = "*"
+
+[tool.pixi.pypi-dependencies]  # editably installs this package
+ldpm = { path = ".", editable = true }
+
+[tool.pixi.environments]
+dev = ["test", "lint", "ide"]
+
+[tool.pixi.feature.test.dependencies]
+python = "3.12.*"
+# pre-commit = "*"
+pytest = "*"
+# behave = "*"
+# hypothesis = "*"
+
+[tool.pixi.feature.lint.dependencies]
+mypy = "*"
+ruff = "*"
+
+[tool.pixi.feature.ide.dependencies]
+# pixi-pycharm = "*"  # https://pixi.prefix.dev/latest/integration/editor/jetbrains/
+spyder = "*"
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["win-64"]
+
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+disallow_untyped_defs = true
+
+
+[tool.ruff]
+line-length = 100
+indent-width = 4
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+[tool.ruff.lint]
+fixable = ["ALL"]
+select = [
+    "F",   # pyflakes
+    "E",   # pycodestyle
+    "I",   # isort
+    "ANN", # flake8 type annotations
+    "RUF", # ruff-specific rules
+]
+pydocstyle = {convention = "google"}
+
