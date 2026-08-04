@@ -19,10 +19,12 @@ pixi install
 ## Usage
 
 ### Getting Started
-To build USLCI+ using the [default manifest]()
+
+To build USLCI+ using the [default manifest](config/manifest.toml):
+
 ```console
 pixi shell
-python uslci-plus
+python uslci_plus
 ```
 
 ### Custom Manifests
@@ -31,7 +33,7 @@ python uslci-plus
 
 ## License
 
-Distributed under the terms of the [MIT license][License], 
+Distributed under the terms of the [MIT license](../License), 
 `ldpm` is free and open source software.
 
 ## Issues

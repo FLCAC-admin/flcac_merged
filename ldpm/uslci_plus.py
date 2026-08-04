@@ -1,23 +1,15 @@
 """
-Download and cache FLCAC data packages via the public API; deduplicate by UUID;
-overwrite .Ref attributes to link across dpkgs; then merge into a single .ZIP
-
-# Glossary
-- build: the database (DB) being assembled from a manifest
-- data package (dpkg): a collection of olca-schema data objects stored in an FLCAC repo
-- dependency: a dpkg specified as a component of the build 
-- duplicate: an object with multiple instances across dpkgs, as identified by UUID
-- manifest: a TOML containing build metadata and dependencies—the structured list 
-            of specifiers (`<alias> = "<version>"`) that define which dpkgs to
-            fetch and integrate into the build
-
-FLCAC API docs: https://www.lcacommons.gov/lca-commons-api-guide
+Fetch FLCAC data packages (dpkg); deduplicate by UUID; link across dpkgs by
+overwriting .Ref attributes; then merge into a single olca-schema .ZIP
 
 Rules for deduplicating same-UUID objects:
-    1. Import dict of {original/parent dpkg:uuid_child} pairs from deduplicate.yaml;
-       ignore all instances of uuid_child that appear in other dpkgs
-       > Note: FEDEFL is parent for all elem. flows, and USEEIO for all tech. flows it contains
-    2. Then, defer to order of entries in manifest TOML's [dependencies] list
+    1. Import deduplicate.yaml dict of {original/parent dpkg:uuid_child} pairs,
+       and ignore all instances of uuid_child that appear in other non-parent dpkgs
+       > Implicit rules omitted from deduplicate.yaml: 
+           - FEDEFL is parent for all elem. flows
+           - USEEIO is parent for all tech. flows which it contains
+    2. If duplicate UUIDs arise w/o any specified parent, defer to the order 
+       of the dpkg entries in manifest's [dependencies] table (i.e., first takes priority)
 """
 
 import json
@@ -30,122 +22,22 @@ from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlencode, urljoin
 
-import requests
 import yaml
-from dotenv import dotenv_values
-from platformdirs import user_data_dir
+
+from ldpm.utils import PATHS, find_file
+from ldpm.flcac_api import SESSION, INDEX_DPKG
 
 
-yaml.SafeDumper.add_representer(
-    defaultdict, yaml.representer.Representer.represent_dict)
-
-PATH_SCRIPT = Path(__file__).parent
-PATH_CONFIG = PATH_SCRIPT / 'config'
-
-PATH_CACHE = Path(user_data_dir(appauthor='FLCAC', appname='uslci+'))  # ~/FLCAC/uslci+
-PATH_CACHE.mkdir(parents=True, exist_ok=True)
-
-PATH_OUT = PATH_SCRIPT / 'output'
-PATH_OUT.mkdir(parents=True, exist_ok=True)
-
-logging.basicConfig(
-    filename=(PATH_OUT / 'app.log'),
-    format = "%(asctime)s [%(levelname)s] %(name)s:%(lineno)s %(message)s",
-    # datefmt='%H:%M:%S',
-    datefmt='%y-%m-%d %H:%M:%S',
-    encoding='utf-8',
-    level=logging.DEBUG,
-    )
+# logging.basicConfig(
+#     filename=(PATHS.output / 'app.log'),
+#     format = "%(asctime)s [%(levelname)s] %(name)s:%(lineno)s %(message)s",
+#     # datefmt='%H:%M:%S',
+#     datefmt='%y-%m-%d %H:%M:%S',
+#     encoding='utf-8',
+#     level=logging.DEBUG,
+#     )
 log = logging.getLogger(__name__)
-
-
-# %% initialize other globals
-def _nested_dict() -> defaultdict:
-    return defaultdict(_nested_dict)
-
-
-@dataclass
-class APIClientSession:
-    """Container for managing requests sessions and configs"""
-    session: requests.Session = field(default_factory=requests.Session)
-    headers: dict = field(default_factory=dict)
-    timeout: float = 10.0
-    url_base: str = field(init=False)
-    api_key: str | None = field(init=False)
-    
-    def __post_init__(self) -> None:
-        self.session.headers.update(self.headers)
-
-        secrets = dotenv_values(PATH_SCRIPT / '.env')
-        if secrets['API_KEY']:
-            self.api_key = secrets['API_KEY']
-            self.url_base = 'https://api.nal.usda.gov/FederalLCACommonsapi/'
-        else:
-            self.api_key = None
-            self.url_base = 'https://www.lcacommons.gov/lca-collaboration/ws/public/'
-         
-    def get(self, endpoint: str, params: dict| None = None, **kwargs) -> bytes:
-        """Submit GET request to FLCAC API"""
-        url = self._build_get_url(url_path=endpoint, params=params)
-        response = self.session.get(url, timeout=self.timeout, **kwargs)
-        response.raise_for_status()
-        return response
-        
-    def _build_get_url(self, url_path: str, params: dict | None = None) -> str:
-        """Build a valid GET request URL for the FLCAC API"""
-        url_base_path = urljoin(self.url_base, url_path.strip('/'))
-        if not (params or self.api_key):
-            return url_base_path
-        else:
-            if params is None:
-                params = {}
-            if self.api_key:
-                params.update({'api_key': self.api_key})
-            query = urlencode(params)
-            return f'{url_base_path}?{query}'
-
-    def compile_dpkg_release_index(self) -> None:
-        """
-        Fetch all available dpkgs and release versionss thereof via FLCAC API, 
-        then write metadata to ./config/data_packages.yaml
-        """
-        response = self.get(endpoint='repository')  # list public dpkg repos
-        metadata_dpkgs = response.json()
-        
-        index = _nested_dict()
-        for dpkg in sorted(metadata_dpkgs, 
-                           key=lambda d: (d['group'].lower(), d['name'].lower())):
-            group, name = dpkg['group'], dpkg['name']
-            if not dpkg['hasReleases']:
-                log.warning(f'Data package has no releases: {dpkg["name"]}')
-                index[dpkg['group']][dpkg['name']] = ''
-            else:
-                response = self.get(f'history/{group}/{name}')  # list all releases
-                dpkg_releases = response.json()
-                for release in dpkg_releases:  # already ordered newest-to-oldest
-                    info = release['releaseInfo']
-                    index[dpkg['group']][dpkg['name']][info['version']] = info['commitId']
-        
-        with (PATH_CONFIG / 'data_packages.yaml').open('w') as _file:
-            yaml.safe_dump(index, _file, sort_keys=False, indent=4)
-
-
-SESSION = APIClientSession()
-
-# compile and load index of available dpkgs
-if not (PATH_CONFIG / 'data_packages.yaml').exists():
-    SESSION.compile_dpkg_release_index()
-    # TODO: trigger re-compilation if API has new release(s), ignoring preexistence of YAML
-with (PATH_CONFIG / 'data_packages.yaml').open() as _file:
-    INDEX_DPKG = yaml.safe_load(_file)
-
-# TODO: migrate INDEX_DPKG compilation & I/O to its own module
-    # then import singleton instance above
-    # ???: implement as set of DataPackage objs?
-
-# TODO: same module-singleton pattern for APIClientSession
 
 
 # %%
@@ -173,7 +65,7 @@ class DataPackage:
             _version = next(iter(INDEX_DPKG[_group][self.name]))
             dependent_attributes.update({'version': _version})
         dependent_attributes.update({
-            'path_zip': PATH_CACHE / f'{self.name}--v{_version}.zip',
+            'path_zip': PATHS.cache / f'{self.name}--v{_version}.zip',
             'commitId': INDEX_DPKG[_group][self.name][_version],
             })
         for attr, value in dependent_attributes.items():
@@ -246,16 +138,7 @@ class Manifest:
 
     @classmethod
     def from_toml(cls, file_name: str = 'manifest.toml'):  # -> Manifest
-        try:
-            file_paths = PATH_SCRIPT.rglob(file_name)
-            file_path, = file_paths
-        except ValueError:
-            if len(file_paths) == 0:
-                log.exception(f'No "{file_name}" file detected in the repo.')
-            elif len(file_paths) > 1:
-                log.exception(f'Multiple "{file_name}" files detected in the repo; '
-                             'please use unique manifest TOML file names.')
-            raise
+        file_path = find_file('manifest.toml')
         with (file_path).open('rb') as f:
             _manifest = tomllib.load(f)
         return cls(
@@ -325,7 +208,7 @@ def compile_dedup_and_ref_indices(manifest: Manifest) -> (dict, dict):
     Import update_Refs.yaml, drop top-level keys, and convert process UUIDs to 
     .zip-relative file paths
     """
-    with (PATH_CONFIG / "deduplicate.yaml").open() as f:
+    with (PATHS.config / 'deduplicate.yaml').open() as f:
         dedup_orig = yaml.safe_load(f)
     
     dpkgs_build = {dpkg.name for dpkg in manifest.dependencies}
@@ -340,7 +223,7 @@ def compile_dedup_and_ref_indices(manifest: Manifest) -> (dict, dict):
                     dedup[dpkg_other].update(
                         {f'{_type}/{uuid}.json' for uuid in uuids})
     
-    with (PATH_CONFIG / "update_Refs.yaml").open() as f:
+    with (PATHS.config / 'update_Refs.yaml').open() as f:
         ref_updates = {}
         for dpkg, sub_dict in yaml.safe_load(f).items():
             if dpkg in dpkgs_build:
@@ -422,7 +305,7 @@ def build_db(
     """
     manifest.fetch_dependencies()
     
-    PATH_OUT_ZIP = PATH_OUT / f'{manifest.build_name}_v{manifest.build_version}.zip'
+    PATH_OUT_ZIP = PATHS.output / f'{manifest.build_name}_v{manifest.build_version}.zip'
         
     dedup, ref_updates = compile_dedup_and_ref_indices(manifest)
     
@@ -471,6 +354,9 @@ def build_db(
                     if not file_rpath.startswith(('processes/', 'flows/')):
                         log.debug('Duplicate @type not addressed by deduplicate.yaml'
                                   f'\n\t{dpkg.name}\n\t{file_rpath}')
+                    elif (file_rpath in flows_fedefl_elem or
+                          file_rpath in flows_useeio_tech):
+                        pass
                     else:
                         log.warning('Duplicate not yet addressed by deduplicate.yaml:'
                                     f'\n\t{dpkg.name}\n\t{file_rpath}')

@@ -1,12 +1,11 @@
-# TODO: refine, test
 [project]
 name = "LDPM"
 description = "LCA Data Package Manager (LDPM)"
 authors = [
 	{name = "Andrew Beck", email = "andrew.beck@erg.com"},
 ]
-# readme = "README.md"
 version = "0.1.0"
+# readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "pandas",

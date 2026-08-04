@@ -28,3 +28,10 @@ pixi shell -e dev spyder
 ```
 
 For more `pixi` commands, check out the [Basic usage of Pixi](https://pixi.prefix.dev/latest/getting_started/) docs.
+
+# Glossary
+- **build**: the database (DB) assembled from a manifest, minted into an `olca-schema` [.ZIP package](greendelta.github.io/olca-schema/#zip-packages)
+- **data package (dpkg)**: a collection of [`olca-schema`](https://greendelta.github.io/olca-schema/) data objects, typically stored in an [FLCAC repo](https://www.lcacommons.gov/lca-collaboration/)
+- **dependency**: a data package, specified by alias and version (e.g., (`<alias> = "<version>"`),  integrated into a build
+- **duplicate**: an `olca-schema` object with multiple instances across dpkgs, as identified by UUID
+- **manifest**: a TOML recipe (e.g., the default [USLCI+ manifest](ldpm/config/manifest.toml)) for a build containing metadata and dependencies—the list of dpkg specifiers  to integrate into the build
