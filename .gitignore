@@ -6,3 +6,7 @@
 !.pixi/config.toml
 
 __pycache__/
+
+# Ignore YAML files starting with an underscore at any depth
+_*.yaml
+_*.yml

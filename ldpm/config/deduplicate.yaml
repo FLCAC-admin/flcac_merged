@@ -48,13 +48,20 @@ USLCI_Database_Public:
   flows:
     # USEEIO bridge flows:
     - a6bee800-f46c-4933-a6be-05305133d239
+    - 6b902763-aac9-346e-932c-1ce6f29d5904
     - 73c55a19-ecdc-3918-8dcb-8e6f7f1bf9bd
-    # woody biomass flows, but choose USLCI (updated names) for now:
+    # woody biomass flows, but choose USLCI for now (updated .name):
     - 31948a1f-886a-3020-b33b-d381a427dbc6
     - dac6904f-42a7-3229-95d4-39c316fbd8e3
-    # waste CUTOFF flows, no provider
+    # woody biomass flows, but choose USLCI for now (updated .category):
+    - 7334df65-355b-4f06-87e4-afc0f45b8a8e
+    # CUTOFF flows, no provider
     - 08f2b558-7aa9-4bfd-aa38-67f8b619095f
     - 12f3be27-4d77-4668-a021-071096d78b3f  # provider in NIST/construction_materials
+    - 2eb3ce0f-e59a-3ba9-ab44-2398b021d108
+    - 46458569-4d5e-33d7-83b9-0b04626f9f67
+    - 5e59bc89-87dd-3469-bef9-fffabbcad405
+    - 712f5239-6b2b-34f5-ae19-5b5265bd123c
     - 7224edad-d8e7-48db-9fa7-0e49bbca75b6
     - 8191e38b-421f-4348-a2e0-29303147f2d1
      # migrate to 'Single-provider flows' once FHWA issue is resolved:
@@ -69,9 +76,11 @@ USLCI_Database_Public:
     - 2afb4e2f-b224-3900-956f-03e3f27b276b
     - 2bb0cd6b-941b-38da-856c-1b7bd0cc5f49
     - 42385daf-e0a4-35de-9a68-931400275c60
+    - 4326be78-ae8b-3446-9310-278636ee68c5
     - 43b6c51f-f1a9-4a6d-8070-fa84adf27d23
     - 45f1fd00-2093-3e05-9b41-e942b9e8cec9
     - 692bdff7-996c-43bd-8182-4528f0e69672
+    - 91feb044-e771-35a3-a81f-ac076c5f9b83
     - a5c7d642-4e3a-40af-a919-a2f7601340b0
     - ba4fbc4f-a9ab-387c-8bdd-9308dc19f404
     - bc38e349-1ccf-3855-a615-a4f581ab875b

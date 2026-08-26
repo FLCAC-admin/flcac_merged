@@ -6,7 +6,9 @@ FLCAC API docs: https://www.lcacommons.gov/lca-commons-api-guide
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import datetime
 from urllib.parse import urlencode, urljoin
+from zoneinfo import ZoneInfo
 
 import requests
 import yaml
@@ -16,13 +18,16 @@ from ldpm.utils import PATHS, find_file
 
 
 yaml.SafeDumper.add_representer(
-    defaultdict, yaml.representer.Representer.represent_dict)
+    defaultdict, yaml.representer.SafeRepresenter.represent_dict)
 
 log = logging.getLogger(__name__)
+
+_PATH_INDEX_DPKG = PATHS.config / 'data_packages.yaml'
 
 
 def _nested_dict() -> defaultdict:
     return defaultdict(_nested_dict)
+    
 
 @dataclass
 class APIClientSession:
@@ -67,42 +72,50 @@ class APIClientSession:
             if params is None:
                 params = {}
             if self.api_key:
-                params.update({'api_key': self.api_key})
+                params |= {'api_key': self.api_key}
             query = urlencode(params)
             return f'{url_base_path}?{query}'
 
     def compile_dpkg_release_index(self) -> None:
         """
         Fetch all available dpkgs and release versionss thereof via FLCAC API, 
-        then write metadata to ./config/data_packages.yaml
+        then write metadata to ./config/data_packages.yaml if non-existent or
+        a new release is available
         """
         response = self.get(endpoint='repository')  # list public dpkg repos
         metadata_dpkgs = response.json()
         
         index = _nested_dict()
-        for dpkg in sorted(metadata_dpkgs, 
-                           key=lambda d: (d['group'].lower(), d['name'].lower())):
+        release_dates = []
+        for dpkg in sorted(metadata_dpkgs, key=lambda d: (d['group'].lower(), d['name'].lower())):
             group, name = dpkg['group'], dpkg['name']
+            release_dates.append( 
+                datetime.fromtimestamp(
+                    dpkg['settings']['releaseDate'] / 1000.0,  # milliseconds
+                    tz=ZoneInfo('America/New_York'))
+                )
             if not dpkg['hasReleases']:
-                log.warning(f'Data package has no releases: {dpkg["name"]}')
-                index[dpkg['group']][dpkg['name']] = ''
+                log.warning(f'Data package has no releases: {name}')
+                index[group][name] = ''
             else:
                 response = self.get(f'history/{group}/{name}')  # list all releases
                 dpkg_releases = response.json()
                 for release in dpkg_releases:  # already ordered newest-to-oldest
                     info = release['releaseInfo']
-                    index[dpkg['group']][dpkg['name']][info['version']] = info['commitId']
-        
-        with (PATHS.config / 'data_packages.yaml').open('w') as _file:
-            yaml.safe_dump(index, _file, sort_keys=False, indent=4)
+                    index[group][name][info['version']] = info['commitId']
+
+        if (_PATH_INDEX_DPKG.exists() and 
+            (datetime.fromtimestamp(_PATH_INDEX_DPKG.stat().st_mtime).astimezone() > 
+             max(release_dates))):
+            return  # no new releases available; skip recompilation
+        else:
+            with _PATH_INDEX_DPKG.open('w') as file:
+                yaml.safe_dump(index, file, sort_keys=False, indent=4)
 
 
 SESSION = APIClientSession()
 
 # compile and load index of available dpkgs
-if not (PATHS.config / 'data_packages.yaml').exists():
-    SESSION.compile_dpkg_release_index()
-    # TODO: trigger re-compilation if API has new release(s), ignoring preexistence of YAML
-    # ???: implement as set of DataPackage objs?
-with (PATHS.config / 'data_packages.yaml').open() as _file:
-    INDEX_DPKG = yaml.safe_load(_file)   
+SESSION.compile_dpkg_release_index()
+with _PATH_INDEX_DPKG.open() as file:
+    INDEX_DPKG = yaml.safe_load(file) 

@@ -25,31 +25,53 @@ from pathlib import Path
 
 import yaml
 
-from ldpm.utils import PATHS, find_file
 from ldpm.flcac_api import SESSION, INDEX_DPKG
+from ldpm.linking import prepare_provider_links
+from ldpm.utils import PATHS, find_file, format_log_msg
 
-
-# logging.basicConfig(
-#     filename=(PATHS.output / 'app.log'),
-#     format = "%(asctime)s [%(levelname)s] %(name)s:%(lineno)s %(message)s",
-#     # datefmt='%H:%M:%S',
-#     datefmt='%y-%m-%d %H:%M:%S',
-#     encoding='utf-8',
-#     level=logging.DEBUG,
-#     )
 log = logging.getLogger(__name__)
 
 
-# %%
 @dataclass(frozen=True)  # unsafe_hash=True allows hashing w/o immutability
 class DataPackage:
     name: str
     version: str
+    excluded_types: tuple[str] = field(default_factory=tuple, repr=False)
     group: str = field(init=False, repr=False)
     path_zip: Path = field(init=False, repr=False)
     commitId: float = field(init=False, repr=False)
     
-    def __post_init__(self) -> None:        
+    def __eq__(self, other):
+        if not isinstance(other, DataPackage):
+            return NotImplemented
+        return self.name == other.name and self.version == other.version
+    
+    def __str__(self) -> str:
+        return f'{self.name}--v{self.version}'
+
+    def __post_init__(self) -> None:
+        # validate olca .ZIP-package type folder exclusions:
+        valid_types = {
+            'actors', 'currencies', 'dq_systems', 'epds', 'flows',
+            'flow_properties', 'lcia_categories', 'lcia_methods', 'locations',
+            'parameters', 'processes', 'product_systems','projects', 'results',
+            'social_indicators', 'sources', 'unit_groups'}
+        try:
+            invalid_types = tuple()
+            for _type in self.excluded_types:
+                if _type not in valid_types:
+                    invalid_types += _type
+            if invalid_types:
+                msg = format_log_msg(
+                    [f'Invalid excluded type(s) for {self.name}:',
+                     f'\t- {"\n\t\t- ".join(invalid_types)}',
+                     'Please use only "folder" type labels of Zip packages in olca-schema docs:'
+                     '\thttps://greendelta.github.io/olca-schema/#zip-packages'])
+                raise ValueError(msg)
+        except ValueError:
+            log.exception()
+            raise
+        # infer group from name
         try:
             groups = [group for group, dpkgs in INDEX_DPKG.items()
                       if self.name in dpkgs.keys()]
@@ -60,45 +82,46 @@ class DataPackage:
                 log.exception(f'Multiple groups contain a dpkg named "{self.name}";'
                               ' contact FLCAC admin to fix.')
             raise
+        # replace "*" wildcard w/ latest version
         _version = self.version
-        if _version == "*":  # replace w/ latest version
+        if _version == "*":  
             _version = next(iter(INDEX_DPKG[_group][self.name]))
-            dependent_attributes.update({'version': _version})
-        dependent_attributes.update({
-            'path_zip': PATHS.cache / f'{self.name}--v{_version}.zip',
-            'commitId': INDEX_DPKG[_group][self.name][_version],
-            })
+            dependent_attributes |= {'version': _version}
+        # set post-init attributes on frozen instance
+        dependent_attributes |= {'path_zip': PATHS.cache / f'{self.name}--v{_version}.zip',
+                                 'commitId': INDEX_DPKG[_group][self.name][_version],
+                                }
         for attr, value in dependent_attributes.items():
             object.__setattr__(self, attr, value)
-
-    def __str__(self) -> str:
-        return f'{self.name}--v{self.version}'
         
     @property
     def zipfile(self, mode: str = 'r') -> zf.ZipFile:
         return zf.ZipFile(self.path_zip, mode)
     
-    def iter_zip_jsons(self, dedup: dict = None) -> (zf.ZipInfo, bytes):
+    def iter_zip_jsons(self, dedup: dict = None, subdir: str = None) -> (zf.ZipInfo, bytes):
         """
         Generate an iterable over the JSON-LD files within the dpkg .zip archive, 
         ignoring non-JSON, binary, and root-level files.
         
         Args:
-            dedup: deduplication index, as compiled by compile_dedup_and_ref_indices()
+            dedup: deduplication index, as compiled by get_dedup_config()
+            subdir: filter to only return files w/i a subdirectory of the .zip (e.g., 'processes') 
         """
-        if not dedup:
+        if dedup is None:
             dedup = {}
-        objs_ignore = dedup.get(self.name, {})
+        objs_ignore = dedup.get(self.name, set()) | {'categories.json', 'openlca.json'}
+        dirs_ignore = ('bin/', *self.excluded_types)
         with self.zipfile as z:
             for metadata in z.infolist():
                 file_rpath = metadata.filename  # str, relative file path w/i .zip
                 if (not file_rpath.endswith('.json')
-                    or file_rpath.startswith('bin/')
+                    or file_rpath.startswith(dirs_ignore)
                     or file_rpath in objs_ignore
-                    or file_rpath in ['categories.json', 'openlca.json']
                     ): continue
+                if subdir:
+                    if not file_rpath.startswith(subdir): continue
                 with z.open(file_rpath, 'r') as file_stream:
-                    yield metadata, file_stream
+                    yield (metadata, file_stream)
     
     def fetch(self) -> None:
         """Check local cache for a data package; download if absent"""
@@ -121,33 +144,34 @@ class DataPackage:
             
 
 @dataclass(frozen=True)
-class Manifest:
-    build_name: str
-    build_version: str
+class Build:
+    name: str
+    version: str
+    path_file: Path = field(repr=False)
     dependencies: set[DataPackage] = field(default_factory=set)
-    dependencies_indirect: set[DataPackage] = field(default_factory=set, init=False)
-    build_datetime: datetime = field(default_factory=datetime.now)
-    _core_dpkg_names: set = field(
-        init=False, 
-        repr=False, 
-        default_factory=lambda: {
-            'elementary_flow_list',  # elem. flows
-            'Fed_Commons_core_database',  #  non-process objs.
-            'USEEIO_v2',  # tech. flows
-        })
+    dependencies_indirect: set[DataPackage] = field(init=False, default_factory=set)
+    created_at: str = field(default_factory=datetime.now)
 
     @classmethod
-    def from_toml(cls, file_name: str = 'manifest.toml'):  # -> Manifest
-        file_path = find_file('manifest.toml')
-        with (file_path).open('rb') as f:
-            _manifest = tomllib.load(f)
-        return cls(
-            build_name=_manifest['build']['name'],
-            build_version=_manifest['build']['version'],
-            dependencies={DataPackage(name, version) for name, version 
-                          in _manifest['dependencies'].items()},
-            )
-    
+    def from_manifest_toml(cls, file_name: str = 'manifest.toml'):  # -> Build
+        path_file = find_file(file_name)
+        with (path_file).open('rb') as f:
+            manifest = tomllib.load(f)
+        dependencies: set[DataPackage] = set()
+        for name, spec in manifest['dependencies'].items():
+            match spec:
+                case str():  # expects SemVer string or "*" wildcard
+                    dependencies.add(DataPackage(name, version=spec))
+                case dict():
+                    excluded_types = tuple(spec.get('exclude', []))
+                    dependencies.add(DataPackage(name, 
+                                                 version=spec['version'],
+                                                 excluded_types=excluded_types))
+        return cls(name=manifest['build']['name'], 
+                   version=manifest['build']['version'],
+                   path_file=path_file,
+                   dependencies=dependencies)
+
     def __post_init__(self) -> None:
         dpkgs_available = {name: tuple(version for version in version_subdict.keys())
                            for name_subdict in INDEX_DPKG.values() 
@@ -157,41 +181,37 @@ class Manifest:
                 error_msg = f'No data package named "{self.name}" is available, per data_packages.yaml.'
                 log.error(error_msg)
                 raise KeyError(error_msg)
-            
-            # if dpkg.version == "*":  # replace w/ latest version
-            #     dpkg.version = dpkgs_available[dpkg.name][0]
-                
             elif dpkg.version not in dpkgs_available[dpkg.name]:
                 error_msg = f'Version "{self.version}" of data package "{self.name}" unavailable.'
                 log.error(error_msg)
                 raise KeyError(error_msg)
         """
         An 'indirect dependency' contains objects used across most/all other 
-        dpkgs on the FLCAC; including them in Manifest.dependencies is optional; 
-        and omission from Manifest defaults to using the latest version
+        dpkgs on the FLCAC; including them in Build.dependencies is optional; 
+        and omission from Build defaults to using the latest version
         """
+        names_indirect_dependencies = (
+            'elementary_flow_list',  # elem. flows
+             'Fed_Commons_core_database',  #  non-process objs.
+             'USEEIO_v2',  # tech. flows
+            )
         dpkgs_indirect = {DataPackage(name, dpkgs_available[name][0])
-                          for name in self._core_dpkg_names}
+                          for name in names_indirect_dependencies}
         dependencies_indirect = dpkgs_indirect - self.dependencies
         object.__setattr__(self, 'dependencies_indirect', dependencies_indirect)
-
-    @property
-    def dependencies_all(self) -> set[DataPackage]:
-        return self.dependencies | self.dependencies_indirect
-    
-    # @property
-    # def index_dependencies_core(self) -> dict(str, DataPackage):
-    #     """The set of core build dependencies, indexed by .name"""
-    #     return {dpkg for dpkg in self.dependencies_all
-    #             if dpkg.name in self._core_dpkg_names}
     
     def __str__(self) -> str:
         dpkgs_as_str = lambda dpkgs: ',\n\t'.join(str(dpkg) for dpkg in dpkgs)
         str_deps_direct = dpkgs_as_str(self.dependencies)
         str_deps_indirect = dpkgs_as_str(self.dependencies_indirect)
-        return (f'Build: {self.build_name}, v{self.build_version}\n'
+        return (f'Build: {self.name}, v{self.version}\n'
                 f'Dependencies, direct:\n\t{str_deps_direct}\n'
-                f'Dependencies, indirect:\n\t{str_deps_indirect}')
+                f'Dependencies, indirect:\n\t{str_deps_indirect}'
+                f'Created: {self.created_at.strftime("%y-%m-%d %T")}')
+    
+    @property
+    def dependencies_all(self) -> set[DataPackage]:
+        return self.dependencies | self.dependencies_indirect
     
     def fetch_dependencies(self) -> None:
         # TODO: add command-line progress bar
@@ -199,119 +219,75 @@ class Manifest:
             dpkg.fetch()
 
 
-def compile_dedup_and_ref_indices(manifest: Manifest) -> (dict, dict):
+def get_dedup_config(build: Build) -> dict:
     """
-    Import deduplicate.yaml and transform it from  
-    (1) a dict of {parent/original dpkg: UUIDs duplicated in other dpkgs}, to
-    (2) a dict of {other dpkg: UUIDs to ignore, as .zip-relative file paths}
-    
-    Import update_Refs.yaml, drop top-level keys, and convert process UUIDs to 
-    .zip-relative file paths
+    Import deduplicate.yaml and invert it from
+    (1) {parent_dpkg: [UUIDs duplicated in other_dpkg(s)]}, to
+    (2) {other_dpkg: file_rpath} to ignore, for each other_dpkg in the build,
+        where file_rpath is a .zip-internal relative file path
     """
-    with (PATHS.config / 'deduplicate.yaml').open() as f:
-        dedup_orig = yaml.safe_load(f)
-    
-    dpkgs_build = {dpkg.name for dpkg in manifest.dependencies}
+    with (PATHS.config / 'deduplicate.yaml').open() as file:
+        dedup_orig = yaml.safe_load(file)
+    dpkgs_build = {dpkg.name for dpkg in build.dependencies}
     if dpkgs_build > dedup_orig.keys():
-        log.warning('One or more manifest dependencies lack deduplicate.yaml entries:'
-                    f'\n{dpkgs_build - dedup_orig.keys()}')    
+        log.debug('One or more dependencies lack deduplicate.yaml entries:'
+                  f'\n{dpkgs_build - dedup_orig.keys()}')    
     dedup = defaultdict(set)
-    for dpkg, uuids_by_type in dedup_orig.items():
+    for dpkg_name, uuids_by_type in dedup_orig.items():
         for _type, uuids in uuids_by_type.items():
             if uuids is not None:
-                for dpkg_other in (dedup_orig.keys() - {dpkg}):
-                    dedup[dpkg_other].update(
-                        {f'{_type}/{uuid}.json' for uuid in uuids})
-    
-    with (PATHS.config / 'update_Refs.yaml').open() as f:
-        ref_updates = {}
-        for dpkg, sub_dict in yaml.safe_load(f).items():
-            if dpkg in dpkgs_build:
-                ref_updates |= sub_dict
-        ref_updates = {f'processes/{k}.json': v for k, v in ref_updates.items()}
-    return dict(dedup), ref_updates
+                for dpkg_other in (dpkgs_build - {dpkg_name}):
+                    dedup[dpkg_other] |= {f'{_type}/{uuid}.json' for uuid in uuids}
+                    # dedup[dpkg_other].update({f'{_type}/{uuid}.json' for uuid in uuids})
+    return dict(dedup)
 
 
-def extract_values(obj: dict | list, target_key: str) -> list:
+def update_provider_links(process_file: zf.ZipExtFile, process_links: dict) -> str:
     """
-    Recursively extract values from every instance of 'target_key' in a dict
-    """
-    values = []
-    if isinstance(obj, dict):
-        for key, value in obj.items():
-            if key == target_key:
-                values.append(value)
-            values.extend(extract_values(value, target_key))
-    elif isinstance(obj, list):
-        for item in obj:
-            values.extend(extract_values(item, target_key))
-    return values
-
-
-def update_refs(data: zf.ZipExtFile, process_ref_updates: dict) -> str:
-    """
-    Alter exchange.flow and/or .defaultProvider linkages according to the
-    instructions for that process, as embedded in update_Refs.yaml.
+    For a single olca.Process JSON file, alter `exchange.defaultProvider.@id` 
+    field/s via instructions complied from provider_links.yaml and linking.py
     
     Args:
-        data: a file pointer for an olca.Process JSON file
+        process_file: file pointer for olca.Process JSON
+        process_links: sub-dict accessed via links_rpath_all[file_rpath]
     Returns:
-        olca.Process with updated Ref links, as single-line JSON (string)
+        olca.Process with updated exchange.defaultProvider links, as single-line JSON
     """
-    # TODO: reorganize update_Refs.yaml to {Exchange.flow.@id: {flow.@id: ..., processes: [process.@id, ...]}}
-        # to minimize duplication (and anchor/alias editing) across N processes requiring same updates
-        # Then invert on import to {process.@id: {Exchange.flow.@id: {<alterations>}}
-    # !!!: consider olca-schema objs for cleaner .attribute indexing
-    process = json.load(data)
-    for exchange_flow_uuid, updates in process_ref_updates.items():
-        # update N exchanges using same flow, or a unique exchange if 'use_internalId'
-        # if isinstance(updates, dict):
-        target_exchanges = [exchange for exchange in process['exchanges']
-                            if (exchange['flow']['@id'] == exchange_flow_uuid
-                                and exchange['isInput'])]
-        for exchange in target_exchanges:
-            if isinstance(updates, list) and extract_values(updates, 'use_internalId'):
-                update, = [u for u in updates 
-                           if u['use_internalId'] == exchange['internalId']]
-            else:
-                update = updates
-            if 'flow.@id' in update:
-                flow = exchange['flow']
-                del flow['name'], flow['category']
-                flow['@id'] = update['flow.@id']
-            if 'defaultProvider' in update:
-                if 'defaultProvider' in exchange:
-                    provider = exchange['defaultProvider']
-                    del provider['name'], provider['category']
-                    provider['@id'] = update['defaultProvider']
-                else:  # add a provider where absent
-                    exchange.update(
-                        {'defaultProvider': {'@id': update['defaultProvider']}})
+    process = json.load(process_file)
+    # reindex on exchange.internalId; exchange.flow.@id keys are for readability
+    exchange_updates = {exchange_id: provider_id
+                        for sub_dict in process_links.values() 
+                        for exchange_id, provider_id in sub_dict.items()}
+    # target exchange pointers for in-place alteration
+    target_exchanges = {exchange['internalId']: exchange
+                        for exchange in process['exchanges'] 
+                        if exchange['internalId'] in exchange_updates}
+    for exchange_id, exchange in target_exchanges.items():
+        exchange['defaultProvider'] = {'@id': exchange_updates[exchange_id]}
     return json.dumps(process,
                       separators=(',', ':'),  # no trailing whitespace
                       ensure_ascii=False)
 
+
 # %%
 def build_db(
-    manifest: Manifest,
-    dedup: dict,
-    ref_updates: dict,
+    build: Build,
 ):
     """
     Merge the set of objects from dpkg dependencies listed in the manifest TOML 
-    into USLCI+, while (1) avoiding duplicated-UUID collissions, and (2) 
+    into the build, while (1) avoiding duplicated-UUID collissions, and (2) 
     overwriting Ref pointers embedded in select objects to facilitate inter-dpkg
     linking and seamless DB import + usage in openLCA Desktop.
     """
-    manifest.fetch_dependencies()
+    build.fetch_dependencies()
     
-    PATH_OUT_ZIP = PATHS.output / f'{manifest.build_name}_v{manifest.build_version}.zip'
+    PATH_OUT_ZIP = PATHS.output / f'{build.name}_v{build.version}.zip'
         
-    dedup, ref_updates = compile_dedup_and_ref_indices(manifest)
-    
-    # compile relative file paths of bridge processes to ignore:
-    bridges_drop = [f'processes/{uuid}.json' for uuid in 
-                    extract_values(ref_updates, 'drop_bridge')]
+    dedup = get_dedup_config(build)
+    provider_updates = prepare_provider_links(build)
+    # TODO: orchestrate dropping of "pass-through" bridge processes in linking.py
+        # compile relative file paths of bridge processes to ignore:
+        # bridges_drop = [f'processes/{uuid}.json' for uuid in _new_linking_function()]
     
     # substitute FEDEFL & USEEIO flows for duplicates appearing in other dpkgs
     # wherever one or both are used as indirect dependencies
@@ -320,62 +296,60 @@ def build_db(
             return {metadata.filename: metadata for metadata in z.infolist()
                     if metadata.filename.startswith('flows/') 
                     and metadata.filename.endswith('.json')}
-
             # return {f for f in z.namelist() 
             #         if f.startswith('flows/') and f.endswith('.json')}
     
-    flows_fedefl_elem, flows_useeio_tech = (dict(), dict())
-    for dpkg in manifest.dependencies_indirect:
+    indirect_flows_fedefl_elem, indirect_flows_useeio_tech = ({}, {})
+    for dpkg in build.dependencies_indirect:
         match dpkg.name:
             case 'elementary_flow_list':
-                flows_fedefl_elem = _get_dpkg_flows(dpkg)
+                indirect_flows_fedefl_elem = _get_dpkg_flows(dpkg)
                 zip_fedefl = dpkg.zipfile
             case 'USEEIO_v2':
-                flows_useeio_tech = _get_dpkg_flows(dpkg)
+                indirect_flows_useeio_tech = _get_dpkg_flows(dpkg)
                 zip_useeio = dpkg.zipfile
         
-    if flows_useeio_tech and flows_fedefl_elem:
-        for flow in flows_fedefl_elem.keys():
-            flows_useeio_tech.pop(flow, None)
+    if indirect_flows_useeio_tech and indirect_flows_fedefl_elem:
+        for flow in indirect_flows_fedefl_elem.keys():
+            indirect_flows_useeio_tech.pop(flow, None)
     
     # TODO: ensure flows_fedefl_elem always deduplicate other dpkgs if FEDEFL
         # is specified as a direct dependency
-    with (
-        zf.ZipFile(PATH_OUT_ZIP, 'w') as zip_build,
-        zip_fedefl if flows_fedefl_elem else nullcontext(),
-        zip_useeio if flows_useeio_tech else nullcontext(),
-    ):
+    with (zf.ZipFile(PATH_OUT_ZIP, 'w') as zip_build,
+          zip_fedefl if indirect_flows_fedefl_elem else nullcontext(),
+          zip_useeio if indirect_flows_useeio_tech else nullcontext()):
         files_written = set()
-        for dpkg in manifest.dependencies:
+        for dpkg in build.dependencies:
             # copy JSONs from dpkg to build .ZIP
             for metadata, file_stream in dpkg.iter_zip_jsons(dedup=dedup):
-                file_rpath = metadata.filename  # str, relative file path w/i .zip
+                file_rpath = metadata.filename
+                # On-the-fly deduplication of already-written UUIDs:
                 if file_rpath in files_written:
                     if not file_rpath.startswith(('processes/', 'flows/')):
                         log.debug('Duplicate @type not addressed by deduplicate.yaml'
                                   f'\n\t{dpkg.name}\n\t{file_rpath}')
-                    elif (file_rpath in flows_fedefl_elem or
-                          file_rpath in flows_useeio_tech):
+                    elif (file_rpath in indirect_flows_fedefl_elem or
+                          file_rpath in indirect_flows_useeio_tech):
                         pass
                     else:
                         log.warning('Duplicate not yet addressed by deduplicate.yaml:'
                                     f'\n\t{dpkg.name}\n\t{file_rpath}')
-                # On-the-fly deduplication of objects from core dpkgs:
-                elif file_rpath in flows_fedefl_elem:
-                    zip_build.writestr(flows_fedefl_elem[file_rpath], 
+                # On-the-fly deduplication of objects from indirect dpkgs:
+                elif file_rpath in indirect_flows_fedefl_elem:
+                    zip_build.writestr(indirect_flows_fedefl_elem[file_rpath], 
                                        zip_fedefl.read(file_rpath))
                     files_written.add(file_rpath)
-                elif file_rpath in flows_useeio_tech:
-                    zip_build.writestr(flows_useeio_tech[file_rpath], 
+                elif file_rpath in indirect_flows_useeio_tech:
+                    zip_build.writestr(indirect_flows_useeio_tech[file_rpath], 
                                        zip_useeio.read(file_rpath))
                     files_written.add(file_rpath)
-                elif file_rpath in bridges_drop:
-                    log.debug(f'Dropped bridge:\n\t{dpkg.name}\n\t{file_rpath}')
-                    pass
+                # elif file_rpath in bridges_drop:
+                #     log.debug(f'Dropped bridge:\n\t{dpkg.name}\n\t{file_rpath}')
+                #     pass
                 else:
                     try:
-                        if file_rpath in ref_updates:
-                            data = update_refs(file_stream, ref_updates[file_rpath])
+                        if file_rpath in provider_updates:
+                            data = update_provider_links(file_stream, provider_updates[file_rpath])
                         else:
                             data = file_stream.read()
                         zip_build.writestr(metadata, data)
@@ -383,17 +357,15 @@ def build_db(
                     except:
                         log.exception(f'Bad write for {file_rpath} from {dpkg.name}')
                         raise
-                    
-    log.info(f'\nWrote combined DB: {PATH_OUT_ZIP}')
+    # TODO: write build metadata to PATHS.output as TOML or YAML
+    print(f'\nWrote combined DB: {PATH_OUT_ZIP}')
         
-
+# %%
 def main() -> int:    
-    manifest = Manifest.from_toml()
-    dedup, ref_updates = compile_dedup_and_ref_indices(manifest)
-    build_db(manifest, dedup, ref_updates)
+    build = Build.from_manifest_toml()
+    build_db(build)
     return 0
 
 
-# %%
 if __name__ == '__main__':
     sys.exit(main())

@@ -4,11 +4,26 @@ version = "0.1.0"
 # repository = "https://github.com/FLCAC-admin/uslci_plus/"
 
 [dependencies]
-USLCI_Database_Public = "1.2026-03.0"
-US_electricity_baseline = "*"  # wildcard that resovles to latest release
-Woody_biomass = "1.2026-05.1"
+# LCI data packages
+USLCI_Database_Public = "*" # asterisk wildcard resovles to latest release
+US_electricity_baseline = "*"
+Woody_biomass = "*"
 # Building_Systems = "1.2025-09.0"
 # construction_materials = "1.2025-07.0"
 # USEEIO_v2 = "1.2022-06.0"
 
-# (later) <arbitrary_github_repo> = <url>
+# LCIA methods data packages
+TRACI_2_2 = { version = "1.2025-04.0", exclude = ["flows", "flow_properties", "unit_groups"] }
+IPCC_GWP = { version = "1.2024-12.0", exclude = ["flows", "flow_properties", "unit_groups"] }
+FEDEFL_Inv = { version = "1.2024-12.0", exclude = ["flows", "flow_properties", "unit_groups"] }
+# ReCiPe = { version = "1.2024-12.0", exclude = ["flows", "flow_properties", "unit_groups"] }
+# Impact_World_Plus = { version = "1.2024-12.0", exclude = ["flows", "flow_properties", "unit_groups"] }
+# construction_epd_indicators = { version = "1.2024-06.0", exclude = ["flows", "flow_properties", "unit_groups"] }
+
+# [dependencies-external]
+# data packages not hosted on lcacommons.gov
+# <alias> = { version = "X.Y.Z", url = "<download_link>", is_zip = false }
+	# TODO: is_zip=false logic to handle unzipped trees of files
+# FEDEFL_Inventory_Methods = { version = "1.0.0", url = "https://pasteur.epa.gov/uploads/10.23719/1522414/FEDEFL_Inventory_json_v1.0.0.zip" }
+# IPCC_GWPs = { version = "AR4-6", url = "https://pasteur.epa.gov/uploads/10.23719/1529821/IPCC_FEDEFL_JSON-LD_no_flows.zip" }
+# TRACI = { version = "2.2", url = "https://agdatacommons.nal.usda.gov/ndownloader/files/61578340" }

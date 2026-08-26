@@ -8,11 +8,12 @@ version = "0.1.0"
 # readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+	"msgspec",
     "pandas",
 	"platformdirs",
 	"python-dotenv",
 	"pyyaml",
-	"requests"
+	"requests",
 ]
 
 scripts = { uslci_plus = "ldpm.uslci_plus:main" }
@@ -26,6 +27,7 @@ requires = ["hatchling"]
 [tool.pixi.dependencies]
 # Installs project.dependencies from conda-forge instead of PyPI if using pixi
 python = "*"
+msgspec = "*"
 pandas = "*"
 platformdirs = "*"
 python-dotenv = "*"
