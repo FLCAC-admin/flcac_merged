@@ -145,8 +145,8 @@ class Build:
     name: str
     version: str
     path_file: Path = field(repr=False)
-    dependencies: set[DataPackage] = field(default_factory=set)
-    dependencies_indirect: set[DataPackage] = field(init=False, default_factory=set)
+    dependencies: tuple[DataPackage] = field(default_factory=tuple)
+    dependencies_indirect: tuple[DataPackage] = field(init=False, default_factory=tuple)
     created_at: str = field(default_factory=datetime.now)
 
     @classmethod
@@ -154,7 +154,7 @@ class Build:
         path_file = find_file(file_name)
         with (path_file).open('rb') as f:
             manifest = tomllib.load(f)
-        dependencies: set[DataPackage] = set()
+        dependencies: tuple[DataPackage] = tuple()
         for name, spec in manifest['dependencies'].items():
             match spec:
                 case str():  # expects SemVer string or "*" wildcard
@@ -167,7 +167,7 @@ class Build:
                             excluded_types = tuple([_type])
                         case list() as _types:
                             excluded_types = tuple(_types)
-            dependencies.add(DataPackage(name, version, excluded_types))
+            dependencies = dependencies + (DataPackage(name, version, excluded_types),)
         # for name, spec in manifest['dependencies'].items():
             # match spec:
                 # case str():  # expects SemVer string or "*" wildcard
@@ -201,14 +201,15 @@ class Build:
         dpkgs on the FLCAC; including them in Build.dependencies is optional; 
         and omission from Build defaults to using the latest version
         """
-        names_indirect_dependencies = (
+        names_indirect_dependencies  = (
             'elementary_flow_list',  # elem. flows
-             'Fed_Commons_core_database',  #  non-process objs.
-             'USEEIO_v2',  # tech. flows
+            'USEEIO_v2',  # tech. flows
+            'Fed_Commons_core_database',  #  non-process objs.
             )
-        dpkgs_indirect = {DataPackage(name, dpkgs_available[name][0])
-                          for name in names_indirect_dependencies}
-        dependencies_indirect = dpkgs_indirect - self.dependencies
+        dependencies_indirect = tuple(
+            DataPackage(name, dpkgs_available[name][0])
+            for name in names_indirect_dependencies 
+            if name not in [dpkg.name for dpkg in self.dependencies])
         object.__setattr__(self, 'dependencies_indirect', dependencies_indirect)
     
     def __str__(self) -> str:
@@ -222,7 +223,7 @@ class Build:
     
     @property
     def dependencies_all(self) -> set[DataPackage]:
-        return self.dependencies | self.dependencies_indirect
+        return self.dependencies + self.dependencies_indirect
     
     def fetch_dependencies(self) -> None:
         # TODO: add command-line progress bar
