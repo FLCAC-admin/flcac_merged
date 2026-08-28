@@ -1,5 +1,6 @@
 # ldpm
-LCA Data Package Manager (LDPM) utility for knitting packages of [olca-schema](https://greendelta.github.io/olca-schema/) data objects into cohesive LCA databases.
+LCA Data Package Manager (LDPM) utility for knitting packages of [olca-schema](https://greendelta.github.io/olca-schema/) 
+data objects into cohesive LCA databases.
 
 ## Installation
 
