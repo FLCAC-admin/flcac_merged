@@ -1,5 +1,5 @@
 [build]
-name = "FLCAC_Merged"
+name = "FLCAC_Merged_Hybrid"
 version = "0.1.0-alpha"
 # repository = "https://github.com/FLCAC-admin/uslci_plus/"
 
@@ -8,7 +8,7 @@ version = "0.1.0-alpha"
 USLCI_Database_Public = "*" # asterisk wildcard resovles to latest release
 US_electricity_baseline = { version = "*", exclude = "product_systems" }
 Woody_biomass = "*"
-# USEEIO_v2 = "*"
+USEEIO_v2 = "*"
 # Building_Systems = "*"
 # construction_materials = "*"
 

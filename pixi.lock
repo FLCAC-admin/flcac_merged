@@ -1677,7 +1677,7 @@ packages:
 - pypi: ./
   name: ldpm
   version: 0.1.0
-  sha256: e7daa6e8b06b1a3b03813320d5404deecc9ddc7547bdc4a8348a7690170790a3
+  sha256: 095bfec357621ec0829e7d362fba3d87a5cf28d4f9d1efd6828df8a4c546fa86
   requires_dist:
   - msgspec
   - pandas
