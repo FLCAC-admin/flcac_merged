@@ -1,4 +1,5 @@
 import logging
+import logging.config
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -107,7 +108,7 @@ PATHS = Paths()
 LOGGING_CONFIG = {
     'version': 1,
     'loggers': {
-        'uslci_plus': {  # root logger
+        'build': {  # root logger
             'handlers': ['console', 'file_info', 'file_debug'],
             # 'level': 'INFO',
         },

@@ -6,16 +6,16 @@ version = "0.1.0"
 [dependencies]
 # LCI data packages
 USLCI_Database_Public = "*" # asterisk wildcard resovles to latest release
-US_electricity_baseline = "*"
+US_electricity_baseline = { version = "*", exclude = "product_systems" }
 Woody_biomass = "*"
-# Building_Systems = "1.2025-09.0"
-# construction_materials = "1.2025-07.0"
+# Building_Systems = "*"
+# construction_materials = "*"
 # USEEIO_v2 = "1.2022-06.0"
 
 # LCIA methods data packages
-TRACI_2_2 = { version = "1.2025-04.0", exclude = ["flows", "flow_properties", "unit_groups"] }
-IPCC_GWP = { version = "1.2024-12.0", exclude = ["flows", "flow_properties", "unit_groups"] }
-FEDEFL_Inv = { version = "1.2024-12.0", exclude = ["flows", "flow_properties", "unit_groups"] }
+TRACI_2_2 = { version = "*", exclude = ["flows", "flow_properties", "unit_groups"] }
+IPCC_GWP = { version = "*", exclude = ["flows", "flow_properties", "unit_groups"] }
+FEDEFL_Inv = { version = "*", exclude = ["flows", "flow_properties", "unit_groups"] }
 # ReCiPe = { version = "1.2024-12.0", exclude = ["flows", "flow_properties", "unit_groups"] }
 # Impact_World_Plus = { version = "1.2024-12.0", exclude = ["flows", "flow_properties", "unit_groups"] }
 # construction_epd_indicators = { version = "1.2024-06.0", exclude = ["flows", "flow_properties", "unit_groups"] }

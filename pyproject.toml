@@ -16,7 +16,7 @@ dependencies = [
 	"requests",
 ]
 
-scripts = { uslci_plus = "ldpm.uslci_plus:main" }
+scripts = { uslci_plus = "ldpm.__main__:main" }
 
 
 [build-system]

@@ -52,25 +52,22 @@ class DataPackage:
     def __post_init__(self) -> None:
         # validate olca .ZIP-package type folder exclusions:
         valid_types = {
-            'actors', 'currencies', 'dq_systems', 'epds', 'flows',
-            'flow_properties', 'lcia_categories', 'lcia_methods', 'locations',
-            'parameters', 'processes', 'product_systems','projects', 'results',
-            'social_indicators', 'sources', 'unit_groups'}
-        try:
-            invalid_types = tuple()
-            for _type in self.excluded_types:
-                if _type not in valid_types:
-                    invalid_types += _type
-            if invalid_types:
-                msg = format_log_msg(
-                    [f'Invalid excluded type(s) for {self.name}:',
-                     f'\t- {"\n\t\t- ".join(invalid_types)}',
-                     'Please use only "folder" type labels of Zip packages in olca-schema docs:'
-                     '\thttps://greendelta.github.io/olca-schema/#zip-packages'])
-                raise ValueError(msg)
-        except ValueError:
-            log.exception()
-            raise
+            'actors', 'currencies', 'dq_systems', 'epds', 'flows', 'flow_properties', 
+            'lcia_categories', 'lcia_methods', 'locations', 'parameters', 'processes', 
+            'product_systems','projects', 'results', 'social_indicators', 'sources', 
+            'unit_groups',
+            }
+        invalid_types = []
+        for _type in self.excluded_types:
+            if _type not in valid_types:
+                invalid_types.append(_type)
+        if invalid_types:
+            msg = format_log_msg(
+                [f'Invalid excluded type(s) for {self.name}:',
+                 f'\t- {"\n\t\t- ".join(invalid_types)}',
+                 'Please use only "folder" type labels of Zip packages in olca-schema docs:'
+                 '\thttps://greendelta.github.io/olca-schema/#zip-packages'])
+            raise ValueError(msg)
         # infer group from name
         try:
             groups = [group for group, dpkgs in INDEX_DPKG.items()
@@ -161,12 +158,26 @@ class Build:
         for name, spec in manifest['dependencies'].items():
             match spec:
                 case str():  # expects SemVer string or "*" wildcard
-                    dependencies.add(DataPackage(name, version=spec))
+                    version = spec
+                    excluded_types = tuple()
                 case dict():
-                    excluded_types = tuple(spec.get('exclude', []))
-                    dependencies.add(DataPackage(name, 
-                                                 version=spec['version'],
-                                                 excluded_types=excluded_types))
+                    version = spec['version']
+                    match spec.get('exclude', []):
+                        case str() as _type:
+                            excluded_types = tuple([_type])
+                        case list() as _types:
+                            excluded_types = tuple(_types)
+            dependencies.add(DataPackage(name, version, excluded_types))
+        # for name, spec in manifest['dependencies'].items():
+            # match spec:
+                # case str():  # expects SemVer string or "*" wildcard
+                    # dependencies.add(DataPackage(name, version=spec))
+                # case dict():
+                    # spec.get('exclude', [])
+                    # excluded_types = tuple()
+                    # dependencies.add(DataPackage(name, 
+                                                 # version=spec['version'],
+                                                 # excluded_types=excluded_types))
         return cls(name=manifest['build']['name'], 
                    version=manifest['build']['version'],
                    path_file=path_file,
