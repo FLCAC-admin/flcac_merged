@@ -7,13 +7,13 @@ data objects into cohesive LCA databases.
 You can install `ldpm` via `pip`'s [VCS install syntax](https://pip.pypa.io/en/stable/topics/vcs-support/):
 
 ```console
-$ pip install git+https://github.com/FLCAC-admin/uslci_plus.git
+$ pip install git+https://github.com/FLCAC-admin/flcac_merged.git
 ```
 
 For editable installs, `pip` can also work, or try [pixi](https://pixi.prefix.dev):
 
 ```console
-git clone https://github.com/FLCAC-admin/uslci_plus.git && cd uslci_plus
+git clone https://github.com/FLCAC-admin/flcac_merged.git && cd flcac_merged
 pixi install
 ```
 
@@ -21,11 +21,11 @@ pixi install
 
 ### Getting Started
 
-To build USLCI+ using the [default manifest](config/manifest.toml):
+To build `FLCAC_Merged` using the [default manifest](config/manifest.toml):
 
 ```console
 pixi shell
-python uslci_plus
+python flcac_merged
 ```
 
 ### Custom Manifests

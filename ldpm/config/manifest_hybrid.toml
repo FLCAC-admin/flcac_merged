@@ -1,7 +1,7 @@
 [build]
 name = "FLCAC_Merged_Hybrid"
 version = "0.1.0-alpha"
-# repository = "https://github.com/FLCAC-admin/uslci_plus/"
+# repository = "https://github.com/FLCAC-admin/flcac_merged/"
 
 [dependencies]
 # LCI data packages
