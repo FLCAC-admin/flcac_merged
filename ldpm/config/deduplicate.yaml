@@ -15,8 +15,6 @@ Woody_biomass:
   processes:
 
   flows:
-    # Flow.name issues in USLCI:
-    - fb62f38b-09c1-42c0-aaa1-53a1c7b53200
     # only CORRIM contains default providers; to-be-migrated to USFS:
     - 7a157e7c-91ca-3d1e-b13c-df3bca99bd51
     - 945a2b4b-8245-3347-ae34-cba43f0d4a28
@@ -93,3 +91,4 @@ USLCI_Database_Public:
     - f77da622-e84d-3639-8917-fcf792aaee13
     - f7c00d19-9601-373a-ba23-593e251b4dee
     - f806b9df-b77c-3369-a00f-feda82b0778c
+    - fb62f38b-09c1-42c0-aaa1-53a1c7b53200

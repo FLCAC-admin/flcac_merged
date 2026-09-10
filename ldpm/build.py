@@ -108,6 +108,8 @@ class DataPackage:
             dedup = {}
         objs_ignore = dedup.get(self.name, set()) | {'categories.json', 'openlca.json'}
         dirs_ignore = ('bin/', *self.excluded_types)
+        if subdir in dirs_ignore:
+            log.exception(f'Cannot access subdir {subdir} due to excluded_types')
         with self.zipfile as z:
             for metadata in z.infolist():
                 file_rpath = metadata.filename  # str, relative file path w/i .zip
@@ -168,16 +170,6 @@ class Build:
                         case list() as _types:
                             excluded_types = tuple(_types)
             dependencies = dependencies + (DataPackage(name, version, excluded_types),)
-        # for name, spec in manifest['dependencies'].items():
-            # match spec:
-                # case str():  # expects SemVer string or "*" wildcard
-                    # dependencies.add(DataPackage(name, version=spec))
-                # case dict():
-                    # spec.get('exclude', [])
-                    # excluded_types = tuple()
-                    # dependencies.add(DataPackage(name, 
-                                                 # version=spec['version'],
-                                                 # excluded_types=excluded_types))
         return cls(name=manifest['build']['name'], 
                    version=manifest['build']['version'],
                    path_file=path_file,
@@ -254,18 +246,17 @@ def get_dedup_config(build: Build) -> dict:
     return dict(dedup)
 
 
-def update_provider_links(process_file: zf.ZipExtFile, process_links: dict) -> str:
+def update_provider_links(process: dict, process_links: dict) -> dict:
     """
     For a single olca.Process JSON file, alter `exchange.defaultProvider.@id` 
     field/s via instructions complied from provider_links.yaml and linking.py
     
     Args:
-        process_file: file pointer for olca.Process JSON
+        process: dict of olca.Process JSON
         process_links: sub-dict accessed via links_rpath_all[file_rpath]
     Returns:
         olca.Process with updated exchange.defaultProvider links, as single-line JSON
     """
-    process = json.load(process_file)
     # reindex on exchange.internalId; exchange.flow.@id keys are for readability
     exchange_updates = {exchange_id: provider_id
                         for sub_dict in process_links.values() 
@@ -276,20 +267,44 @@ def update_provider_links(process_file: zf.ZipExtFile, process_links: dict) -> s
                         if exchange['internalId'] in exchange_updates}
     for exchange_id, exchange in target_exchanges.items():
         exchange['defaultProvider'] = {'@id': exchange_updates[exchange_id]}
-    return json.dumps(process,
-                      separators=(',', ':'),  # no trailing whitespace
-                      ensure_ascii=False)
+    return process
+
+
+def write_compact_json(_dict: dict) -> None:
+    """Write dict to single-line JSON, without trailing whitespace"""
+    return json.dumps(_dict, separators=(',', ':'), ensure_ascii=False)
+
+
+def add_dpkg_tag(process: dict, dpkg: DataPackage) -> str:
+    """
+    For an olca.Process JSON file, alter the .tags list field to include the
+    dpkg.__str__ identfier, then convert to a single-line JSON string
+
+    Args:
+        json_str: parsed olca.Process JSON
+    Returns:
+        olca.Process with updated .tags as single-line JSON
+    """
+    process.setdefault('tags', []).append(str(dpkg))
+    return write_compact_json(process)
+
 
 
 # %%
 def build_db(
     build: Build,
+    add_dpkg_tags: bool = True,
 ):
     """
     Merge the set of objects from dpkg dependencies listed in the manifest TOML 
     into the build, while (1) avoiding duplicated-UUID collissions, and (2) 
     overwriting Ref pointers embedded in select objects to facilitate inter-dpkg
     linking and seamless DB import + usage in openLCA Desktop.
+    
+    Args:
+        build: parsed olca.Process JSON
+    Returns:
+        olca.Process with updated .tags as single-line JSON
     """
     build.fetch_dependencies()
     
@@ -301,15 +316,15 @@ def build_db(
         # compile relative file paths of bridge processes to ignore:
         # bridges_drop = [f'processes/{uuid}.json' for uuid in _new_linking_function()]
     
-    # substitute FEDEFL & USEEIO flows for duplicates appearing in other dpkgs
-    # wherever one or both are used as indirect dependencies
+    # Substitute FEDEFL & USEEIO flows for duplicates appearing in other dpkgs
+        # wherever one or both are used as indirect dependencies
     def _get_dpkg_flows(dpkg: DataPackage) -> dict:
-        with dpkg.zipfile as z:
-            return {metadata.filename: metadata for metadata in z.infolist()
-                    if metadata.filename.startswith('flows/') 
-                    and metadata.filename.endswith('.json')}
-            # return {f for f in z.namelist() 
-            #         if f.startswith('flows/') and f.endswith('.json')}
+        return {metadata.filename: metadata for metadata, _ 
+                in dpkg.iter_zip_jsons(subdir='flows')}
+        # with dpkg.zipfile as z:
+        #     return {metadata.filename: metadata for metadata in z.infolist()
+        #             if metadata.filename.startswith('flows/') 
+        #             and metadata.filename.endswith('.json')}
     
     indirect_flows_fedefl_elem, indirect_flows_useeio_tech = ({}, {})
     for dpkg in build.dependencies_indirect:
@@ -325,8 +340,7 @@ def build_db(
         for flow in indirect_flows_fedefl_elem.keys():
             indirect_flows_useeio_tech.pop(flow, None)
     
-    # TODO: ensure flows_fedefl_elem always deduplicate other dpkgs if FEDEFL
-        # is specified as a direct dependency
+    # TODO: give same dedup priority to FEDEFL & USEEIO as direct dependencies
     with (zf.ZipFile(PATH_OUT_ZIP, 'w') as zip_build,
           zip_fedefl if indirect_flows_fedefl_elem else nullcontext(),
           zip_useeio if indirect_flows_useeio_tech else nullcontext()):
@@ -335,23 +349,27 @@ def build_db(
             # copy JSONs from dpkg to build .ZIP
             for metadata, file_stream in dpkg.iter_zip_jsons(dedup=dedup):
                 file_rpath = metadata.filename
+                subdir = file_rpath.split('/')[0]
                 # On-the-fly deduplication of already-written UUIDs:
                 if file_rpath in files_written:
-                    if not file_rpath.startswith(('processes/', 'flows/')):
-                        log.debug('Duplicate @type not addressed by deduplicate.yaml'
+                    if not subdir in ['processes', 'flows']:
+                        log.debug('Duplicate @type not addressed by deduplicate.yaml:'
                                   f'\n\t{dpkg.name}\n\t{file_rpath}')
-                    elif (file_rpath in indirect_flows_fedefl_elem or
-                          file_rpath in indirect_flows_useeio_tech):
+                    elif (subdir == 'flows' and 
+                          (file_rpath in indirect_flows_fedefl_elem or
+                           file_rpath in indirect_flows_useeio_tech)):
                         pass
                     else:
                         log.warning('Duplicate not yet addressed by deduplicate.yaml:'
                                     f'\n\t{dpkg.name}\n\t{file_rpath}')
                 # On-the-fly deduplication of objects from indirect dpkgs:
-                elif file_rpath in indirect_flows_fedefl_elem:
+                elif (subdir == 'flows' and 
+                      file_rpath in indirect_flows_fedefl_elem):
                     zip_build.writestr(indirect_flows_fedefl_elem[file_rpath], 
                                        zip_fedefl.read(file_rpath))
                     files_written.add(file_rpath)
-                elif file_rpath in indirect_flows_useeio_tech:
+                elif (subdir == 'flows' and 
+                      file_rpath in indirect_flows_useeio_tech):
                     zip_build.writestr(indirect_flows_useeio_tech[file_rpath], 
                                        zip_useeio.read(file_rpath))
                     files_written.add(file_rpath)
@@ -360,18 +378,31 @@ def build_db(
                 #     pass
                 else:
                     try:
-                        if file_rpath in provider_updates:
-                            data = update_provider_links(file_stream, provider_updates[file_rpath])
+                        if subdir == 'processes':
+                            if add_dpkg_tags:
+                                process: dict = json.load(file_stream)
+                                if file_rpath in provider_updates:
+                                    process = update_provider_links(process, 
+                                                                    provider_updates[file_rpath])
+                                _json: str = add_dpkg_tag(process, str(dpkg))
+                            else:
+                                if file_rpath in provider_updates:
+                                    process = update_provider_links(json.load(file_stream),
+                                                                    provider_updates[file_rpath])
+                                    _json: str = write_compact_json(process)
+                                else:
+                                    _json: bytes = file_stream.read()
                         else:
-                            data = file_stream.read()
-                        zip_build.writestr(metadata, data)
+                            _json: bytes = file_stream.read()
+                        zip_build.writestr(metadata, _json)
                         files_written.add(file_rpath)
                     except:
-                        log.exception(f'Bad write for {file_rpath} from {dpkg.name}')
+                        log.exception(f'Bad write for {file_rpath} from {str(dpkg)}')
                         raise
-    # TODO: write build metadata to PATHS.output as TOML or YAML
+    # TODO: write resolved/frozen/locked manifest TOML PATHS.output
     print(f'\nWrote combined DB: {PATH_OUT_ZIP}')
-        
+
+
 # %%
 def main() -> int:    
     build = Build.from_manifest_toml()
